@@ -39,8 +39,10 @@ library
                       , bytestring
                       , hashable
                       , network
+                      , old-locale
                       , scientific
                       , text
+                      , time
                       , unordered-containers
                       , vector
 
@@ -68,3 +70,4 @@ test-suite spec
                       , vector
                       , text
                       , unordered-containers
+                      , time

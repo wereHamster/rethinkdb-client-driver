@@ -16,16 +16,23 @@ import           Test.Hspec.SmallCheck
 
 import           Database.RethinkDB
 
+import           Data.Function
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMS
 import           Data.Text           (Text)
 import qualified Data.Text           as T
 import           Data.Vector         (Vector)
 import qualified Data.Vector         as V
+import           Data.Time
+import           Data.Time.Clock.POSIX
 
 
 
 instance Monad m => Serial m Datum
+instance Monad m => Serial m UTCTime where
+    series = decDepth $ (posixSecondsToUTCTime . fromIntegral) <$> series
+instance Monad m => Serial m ZonedTime where
+    series = decDepth $ utcToZonedTime utc <$> series
 instance Monad m => Serial m Text where
     series = decDepth $ T.pack <$> series
 instance Monad m => Serial m (HashMap Text Datum) where
@@ -59,6 +66,8 @@ spec h = do
                 monadic $ ((Right x)==) <$> run h (constant x)
             it "Datum" $ property $ \(x :: Datum) ->
                 monadic $ ((Right x)==) <$> run h (constant x)
+            it "ZonedTime" $ property $ \(x :: ZonedTime) ->
+                monadic $ (on (==) (fmap zonedTimeToUTC) (Right x)) <$> run h (constant x)
 
         describe "pure functions" $ do
             it "add" $ property $ \(xs0 :: [Double]) -> monadic $ do

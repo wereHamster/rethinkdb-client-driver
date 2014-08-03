@@ -10,17 +10,22 @@ module Database.RethinkDB.Types where
 
 
 import           Control.Applicative
+import           Control.Monad
 
+import           Data.Function
 import           Data.Word
 import           Data.String
-import           Data.Text (Text)
+import           Data.Text           (Text)
+import           Data.Time
+import           System.Locale       (defaultTimeLocale)
+import           Data.Time.Clock.POSIX
 
-import           Data.Aeson          ((.:), FromJSON, parseJSON, toJSON)
+import           Data.Aeson          ((.:), (.=), FromJSON, parseJSON, toJSON)
 import           Data.Aeson.Types    (Parser, Value)
-import qualified Data.Aeson       as A
+import qualified Data.Aeson          as A
 
-import           Data.Vector (Vector)
-import qualified Data.Vector as V
+import           Data.Vector         (Vector)
+import qualified Data.Vector         as V
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMS
 
@@ -69,7 +74,8 @@ data Datum
     | String !Text
     | Array  !Array
     | Object !Object
-    deriving (Eq, Show, Generic)
+    | Time   !ZonedTime
+    deriving (Show, Generic)
 
 
 class (Any a) => IsDatum a
@@ -78,6 +84,18 @@ class (Any a) => IsDatum a
 instance Any     Datum
 instance IsDatum Datum
 
+-- | We can't automatically derive 'Eq' because 'ZonedTime' does not have an
+-- instance of 'Eq'. See the 'eqTime' function for why we can compare times.
+instance Eq Datum where
+    (Null    ) == (Null    ) = True
+    (Bool   x) == (Bool   y) = x == y
+    (Number x) == (Number y) = x == y
+    (String x) == (String y) = x == y
+    (Array  x) == (Array  y) = x == y
+    (Object x) == (Object y) = x == y
+    (Time   x) == (Time   y) = x `eqTime` y
+    _          == _          = False
+
 instance ToRSON Datum where
     toRSON (Null    ) = A.Null
     toRSON (Bool   x) = toRSON x
@@ -85,14 +103,15 @@ instance ToRSON Datum where
     toRSON (String x) = toRSON x
     toRSON (Array  x) = toRSON x
     toRSON (Object x) = toRSON x
+    toRSON (Time   x) = toRSON x
 
 instance FromRSON Datum where
-    parseRSON (A.Null    ) = pure Null
-    parseRSON (A.Bool   x) = pure $ Bool x
-    parseRSON (A.Number x) = pure $ Number (realToFrac x)
-    parseRSON (A.String x) = pure $ String x
-    parseRSON (A.Array  x) = Array <$> V.mapM parseRSON x
-    parseRSON (A.Object x) = do
+    parseRSON   (A.Null    ) = pure Null
+    parseRSON   (A.Bool   x) = pure $ Bool x
+    parseRSON   (A.Number x) = pure $ Number (realToFrac x)
+    parseRSON   (A.String x) = pure $ String x
+    parseRSON   (A.Array  x) = Array <$> V.mapM parseRSON x
+    parseRSON a@(A.Object x) = (Time <$> parseRSON a) <|> do
         -- HashMap does not provide a mapM, what a shame :(
         items <- mapM (\(k, v) -> (,) <$> pure k <*> parseRSON v) $ HMS.toList x
         return $ Object $ HMS.fromList items
@@ -206,6 +225,51 @@ instance FromRSON Object where
 
 instance ToRSON Object where
     toRSON = A.Object . HMS.fromList . map (\(k, v) -> (k, toRSON v)) . HMS.toList
+
+
+
+------------------------------------------------------------------------------
+-- | Time in RethinkDB is represented similar to the 'ZonedTime' type. Except
+-- that the JSON representation on the wire looks different from the default
+-- used by 'Aeson'. Therefore we have a custom 'FromRSON' and 'ToRSON'
+-- instances.
+
+instance Any      ZonedTime
+instance IsDatum  ZonedTime
+instance IsObject ZonedTime
+
+instance FromResponse ZonedTime where
+    parseResponse = responseAtomParser
+
+instance ToRSON ZonedTime where
+    toRSON t = A.object
+        [ "$reql_type$" .= ("TIME" :: Text)
+        , "timezone"    .= (timeZoneOffsetString $ zonedTimeZone t)
+        , "epoch_time"  .= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC t :: Double)
+        ]
+
+instance FromRSON ZonedTime where
+    parseRSON (A.Object o) = do
+        reqlType <- o .: "$reql_type$"
+        guard $ reqlType == ("TIME" :: Text)
+
+        -- Parse the timezone using 'parseTime'. This overapproximates the
+        -- possible responses from the server, but better than rolling our
+        -- own timezone parser.
+        tz <- o .: "timezone" >>= \tz -> case parseTime defaultTimeLocale "%Z" tz of
+            Just d -> pure d
+            _      -> fail "Could not parse TimeZone"
+
+        t <- o .: "epoch_time" :: Parser Double
+        return $ utcToZonedTime tz $ posixSecondsToUTCTime $ realToFrac t
+
+    parseRSON _           = fail "Time"
+
+
+-- | Comparing two times is done on the local time, regardless of the timezone.
+-- This is exactly how the RethinkDB server does it.
+eqTime :: ZonedTime -> ZonedTime -> Bool
+eqTime = (==) `on` zonedTimeToUTC
 
 
 
@@ -386,6 +450,7 @@ type family Result a
 type instance Result Text            = Text
 type instance Result Double          = Double
 type instance Result Bool            = Bool
+type instance Result ZonedTime       = ZonedTime
 
 type instance Result Table           = Sequence Datum
 type instance Result Datum           = Datum

@@ -15,6 +15,7 @@ module Database.RethinkDB
     , Table, Database, SingleSelection
     , Res
     , emptyOptions
+    , eqTime
 
     , Any, IsDatum, IsObject, IsSequence
 
