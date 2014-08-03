@@ -13,7 +13,7 @@ module Database.RethinkDB
     , Sequence
     , constant
     , Table, Database, SingleSelection
-    , Res
+    , Res, Result, FromResponse
     , emptyOptions
     , eqTime
 

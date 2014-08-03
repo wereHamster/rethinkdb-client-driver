@@ -72,7 +72,7 @@ data Datum
     | Bool   !Bool
     | Number !Double
     | String !Text
-    | Array  !Array
+    | Array  !(Array Datum)
     | Object !Object
     | Time   !ZonedTime
     deriving (Show, Generic)
@@ -176,23 +176,24 @@ instance ToRSON Text where
 ------------------------------------------------------------------------------
 -- | Arrays are vectors of 'Datum'.
 
-type Array = Vector Datum
+type Array a = Vector a
 
-instance Any     Array
-instance IsDatum Array
+instance (Any a)     => Any        (Array a)
+instance (IsDatum a) => IsDatum    (Array a)
+instance (IsDatum a) => IsSequence (Array a)
 
-instance FromResponse Array where
+instance (FromRSON a) => FromResponse (Array a) where
     parseResponse = responseAtomParser
 
--- Arrays are encoded as a term MAKE_ARRAY.
-instance ToRSON Array where
+-- Arrays are encoded as a term MAKE_ARRAY (2).
+instance (ToRSON a) => ToRSON (Array a) where
     toRSON v = A.Array $ V.fromList $
-        [ toRSON MAKE_ARRAY
+        [ A.Number 2
         , toJSON $ map toRSON (V.toList v)
         , toRSON emptyOptions
         ]
 
-instance FromRSON Array where
+instance (FromRSON a) => FromRSON (Array a) where
     parseRSON (A.Array v) = V.mapM parseRSON v
     parseRSON _           = fail "Array"
 
@@ -279,7 +280,7 @@ eqTime = (==) `on` zonedTimeToUTC
 -- This type is not exported, and merely serves as a sort of phantom type. On
 -- the client tables are converted to a 'Sequence'.
 
-data Table = Table
+data Table = MkTable
 
 instance Any        Table
 instance IsSequence Table
@@ -309,7 +310,7 @@ instance IsObject SingleSelection
 -- | A 'Database' is something which contains tables. It is a server-only
 -- type.
 
-data Database = Database
+data Database = MkDatabase
 
 instance Any Database
 instance ToRSON Database where
@@ -347,59 +348,123 @@ instance (Any a) => IsSequence (Sequence a)
 
 
 ------------------------------------------------------------------------------
--- | All types of functions which the server supports. Keep this in sync with
--- the protocol definition file, especially the ToRSON instance.
-
-data TermType
-    = ADD
-    | COERCE_TO
-    | DB
-    | GET
-    | GET_ALL
-    | GET_FIELD
-    | INSERT
-    | LIMIT
-    | MAKE_ARRAY
-    | APPEND
-    | TABLE
-    | FILTER
-    | IS_EMPTY
-    | EQ_
-    | DELETE
-
-
-instance ToRSON TermType where
-    toRSON MAKE_ARRAY = A.Number 2
-    toRSON DB         = A.Number 14
-    toRSON TABLE      = A.Number 15
-    toRSON GET        = A.Number 16
-    toRSON GET_ALL    = A.Number 78
-    toRSON ADD        = A.Number 24
-    toRSON COERCE_TO  = A.Number 51
-    toRSON GET_FIELD  = A.Number 31
-    toRSON INSERT     = A.Number 56
-    toRSON LIMIT      = A.Number 71
-    toRSON APPEND     = A.Number 29
-    toRSON FILTER     = A.Number 39
-    toRSON IS_EMPTY   = A.Number 86
-    toRSON EQ_        = A.Number 17
-    toRSON DELETE     = A.Number 54
-
-
-
-------------------------------------------------------------------------------
 
 data Exp a where
-    Constant :: (IsDatum a) => a -> Exp a
-    Term     :: TermType -> [SomeExp] -> Object -> Exp a
+    Constant       :: (IsDatum a) => a -> Exp a
 
+    -- Database administration
+    ListDatabases  :: Exp (Array Text)
+    CreateDatabase :: Exp Text -> Exp Object
+    DropDatabase   :: Exp Text -> Exp Object
+
+    -- Table administration
+    ListTables     :: Exp Database -> Exp (Array Text)
+    CreateTable    :: Exp Database -> Exp Text -> Exp Object
+    DropTable      :: Exp Database -> Exp Text -> Exp Object
+
+    Database       :: Exp Text -> Exp Database
+    Table          :: Exp Text -> Exp Table
+    Coerce         :: (Any a, Any b) => Exp a -> Exp Text -> Exp b
+    Add            :: [Exp Double] -> Exp Double
+    Eq             :: (Any a, Any b) => Exp a -> Exp b -> Exp Bool
+    Get            :: Exp Table -> Exp Text -> Exp SingleSelection
+    GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
+    GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
+    GetField       :: (Any s, Any r) => Exp s -> Exp Text -> Exp r
+    Take           :: (Any a) => Exp (Sequence a) -> Exp Double -> Exp (Sequence a)
+    Append         :: (Any a) => Exp (Array a) -> Exp a -> Exp (Array a)
+    Prepend        :: (Any a) => Exp (Array a) -> Exp a -> Exp (Array a)
+    IsEmpty        :: (IsSequence a) => Exp a -> Exp Bool
+    Delete         :: (Any a) => Exp a -> Exp Object
+    Insert         :: Exp Table -> Object -> Object -> Exp Object
+    Filter         :: (IsSequence s, Any f) => Exp s -> Exp f -> Exp s
+    Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
 
 instance (ToRSON a) => ToRSON (Exp a) where
     toRSON (Constant datum) =
         toRSON datum
 
-    toRSON (Term termType args opts) =
-        A.Array $ V.fromList [toRSON termType, toJSON (map toRSON args), toRSON opts]
+
+    toRSON ListDatabases =
+        simpleTerm 59 []
+
+    toRSON (CreateDatabase name) =
+        simpleTerm 57 [SomeExp name]
+
+    toRSON (DropDatabase name) =
+        simpleTerm 58 [SomeExp name]
+
+
+    toRSON (ListTables db) =
+        simpleTerm 62 [SomeExp db]
+
+    toRSON (CreateTable db name) =
+        simpleTerm 60 [SomeExp db, SomeExp name]
+
+    toRSON (DropTable db name) =
+        simpleTerm 61 [SomeExp db, SomeExp name]
+
+
+    toRSON (Database name) =
+        simpleTerm 14 [SomeExp name]
+
+    toRSON (Table name) =
+        simpleTerm 15 [SomeExp name]
+
+    toRSON (Filter s f) =
+        simpleTerm 39 [SomeExp s, SomeExp f]
+
+    toRSON (Insert table object options) =
+        termWithOptions 56 [SomeExp table, SomeExp (constant object)] options
+
+    toRSON (Delete selection) =
+        simpleTerm 54 [SomeExp selection]
+
+    toRSON (GetField object field) =
+        simpleTerm 31 [SomeExp object, SomeExp field]
+
+    toRSON (Coerce value typeName) =
+        simpleTerm 51 [SomeExp value, SomeExp typeName]
+
+    toRSON (Add values) =
+        simpleTerm 24 (map SomeExp values)
+
+    toRSON (Eq a b) =
+        simpleTerm 17 [SomeExp a, SomeExp b]
+
+    toRSON (Get table key) =
+        simpleTerm 16 [SomeExp table, SomeExp key]
+
+    toRSON (GetAll table keys) =
+        simpleTerm 78 ([SomeExp table] ++ map SomeExp keys)
+
+    toRSON (GetAllIndexed table keys index) =
+        termWithOptions 78 ([SomeExp table] ++ map SomeExp keys)
+            (HMS.singleton "index" (String index))
+
+    toRSON (Take s n) =
+        simpleTerm 71 [SomeExp s, SomeExp n]
+
+    toRSON (Append array value) =
+        simpleTerm 29 [SomeExp array, SomeExp value]
+
+    toRSON (Prepend array value) =
+        simpleTerm 80 [SomeExp array, SomeExp value]
+
+    toRSON (IsEmpty s) =
+        simpleTerm 86 [SomeExp s]
+
+    toRSON (Keys a) =
+        simpleTerm 94 [SomeExp a]
+
+
+simpleTerm :: Int -> [SomeExp] -> A.Value
+simpleTerm termType args =
+    A.Array $ V.fromList [toJSON termType, toJSON (map toRSON args)]
+
+termWithOptions :: Int -> [SomeExp] -> Object -> A.Value
+termWithOptions termType args options =
+    A.Array $ V.fromList [toJSON termType, toJSON (map toRSON args), toRSON options]
 
 
 -- | Convenience to for automatically converting a 'Text' to a constant
@@ -463,7 +528,7 @@ type instance Result ZonedTime       = ZonedTime
 type instance Result Table           = Sequence Datum
 type instance Result Datum           = Datum
 type instance Result Object          = Object
-type instance Result Array           = Array
+type instance Result (Array a)       = Array a
 type instance Result SingleSelection = Maybe Datum
 type instance Result (Sequence a)    = Sequence a
 
