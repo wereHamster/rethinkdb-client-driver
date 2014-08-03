@@ -62,9 +62,29 @@ insert :: Exp Table -> Object -> Exp Object
 insert tbl obj = Term INSERT [SomeExp tbl, SomeExp (constant obj)] emptyOptions
 
 
+upsert :: Exp Table -> Object -> Exp Object
+upsert tbl obj = Term INSERT [SomeExp tbl, SomeExp (constant obj)] (HMS.singleton "upsert"(Bool True))
+
+
+delete :: (Any a) => Exp a -> Exp Object
+delete s = Term DELETE [SomeExp s] emptyOptions
+
+
 limit :: (Any a) => Exp a -> Exp Double -> Exp Table
 limit s n = Term LIMIT [SomeExp s, SomeExp n] emptyOptions
 
 
 append :: Exp Array -> Exp Datum -> Exp Array
 append a d = Term APPEND [SomeExp a, SomeExp d] emptyOptions
+
+
+filter :: (Any a, Any f) => Exp (Sequence a) -> Exp f -> Exp (Sequence a)
+filter s f = Term FILTER [SomeExp s, SomeExp f] emptyOptions
+
+
+isEmpty :: (Any a) => Exp (Sequence a) -> Exp Bool
+isEmpty s = Term IS_EMPTY [SomeExp s] emptyOptions
+
+
+eq :: (Any a, Any b) => Exp a -> Exp b -> Exp Bool
+eq a b = Term EQ_ [SomeExp a, SomeExp b] emptyOptions

@@ -48,7 +48,7 @@ class ToRSON a where
     toRSON :: a -> A.Value
 
 instance (ToRSON a, ToRSON b) => ToRSON (a,b) where
-    toRSON (a,b)= toJSON (toRSON a, toRSON b)
+    toRSON (a,b) = toJSON (toRSON a, toRSON b)
 
 
 
@@ -362,6 +362,10 @@ data TermType
     | MAKE_ARRAY
     | APPEND
     | TABLE
+    | FILTER
+    | IS_EMPTY
+    | EQ_
+    | DELETE
 
 
 instance ToRSON TermType where
@@ -376,6 +380,10 @@ instance ToRSON TermType where
     toRSON INSERT     = A.Number 56
     toRSON LIMIT      = A.Number 71
     toRSON APPEND     = A.Number 29
+    toRSON FILTER     = A.Number 39
+    toRSON IS_EMPTY   = A.Number 86
+    toRSON EQ_        = A.Number 17
+    toRSON DELETE     = A.Number 54
 
 
 
