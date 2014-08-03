@@ -104,8 +104,8 @@ start handle term = do
 
 
 
-singleElementArray :: Int -> A.Value
-singleElementArray x = A.Array $ V.singleton $ A.Number $ fromIntegral x
+singleElementArray :: Int -> Datum
+singleElementArray x = Array $ V.singleton $ Number $ fromIntegral x
 
 -- | Let the server know that it can send the next response corresponding to
 -- the given token.

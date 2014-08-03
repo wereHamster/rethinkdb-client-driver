@@ -15,7 +15,7 @@ import           Data.Word
 import           Data.String
 import           Data.Text (Text)
 
-import           Data.Aeson          (FromJSON(..), ToJSON(..), (.:))
+import           Data.Aeson          ((.:), FromJSON, parseJSON, toJSON)
 import           Data.Aeson.Types    (Parser, Value)
 import qualified Data.Aeson       as A
 
@@ -29,13 +29,32 @@ import           GHC.Generics
 
 
 ------------------------------------------------------------------------------
+-- | A class describing a type which can be converted to the RethinkDB-specific
+-- wire protocol. It is based on JSON, but certain types use a presumably more
+-- efficient encoding.
+
+class FromRSON a where
+    parseRSON :: A.Value -> Parser a
+
+------------------------------------------------------------------------------
+-- | See 'FromRSON'.
+
+class ToRSON a where
+    toRSON :: a -> A.Value
+
+instance (ToRSON a, ToRSON b) => ToRSON (a,b) where
+    toRSON (a,b)= toJSON (toRSON a, toRSON b)
+
+
+
+------------------------------------------------------------------------------
 -- | Any value which can appear in RQL terms.
 --
 -- For convenience we require that it can be converted to JSON, but that is
 -- not required for all types. Only types which satisfy 'IsDatum' are
 -- eventually converted to JSON.
 
-class (ToJSON a) => Any a
+class (ToRSON a) => Any a
 
 
 
@@ -59,23 +78,23 @@ class (Any a) => IsDatum a
 instance Any     Datum
 instance IsDatum Datum
 
-instance ToJSON Datum where
-    toJSON (Null    ) = A.Null
-    toJSON (Bool   x) = toJSON x
-    toJSON (Number x) = toJSON x
-    toJSON (String x) = toJSON x
-    toJSON (Array  x) = toJSON x
-    toJSON (Object x) = toJSON x
+instance ToRSON Datum where
+    toRSON (Null    ) = A.Null
+    toRSON (Bool   x) = toRSON x
+    toRSON (Number x) = toRSON x
+    toRSON (String x) = toRSON x
+    toRSON (Array  x) = toRSON x
+    toRSON (Object x) = toRSON x
 
-instance FromJSON Datum where
-    parseJSON (A.Null    ) = pure Null
-    parseJSON (A.Bool   x) = pure $ Bool x
-    parseJSON (A.Number x) = pure $ Number (realToFrac x)
-    parseJSON (A.String x) = pure $ String x
-    parseJSON (A.Array  x) = Array <$> V.mapM parseJSON x
-    parseJSON (A.Object x) = do
+instance FromRSON Datum where
+    parseRSON (A.Null    ) = pure Null
+    parseRSON (A.Bool   x) = pure $ Bool x
+    parseRSON (A.Number x) = pure $ Number (realToFrac x)
+    parseRSON (A.String x) = pure $ String x
+    parseRSON (A.Array  x) = Array <$> V.mapM parseRSON x
+    parseRSON (A.Object x) = do
         -- HashMap does not provide a mapM, what a shame :(
-        items <- mapM (\(k, v) -> (,) <$> pure k <*> parseJSON v) $ HMS.toList x
+        items <- mapM (\(k, v) -> (,) <$> pure k <*> parseRSON v) $ HMS.toList x
         return $ Object $ HMS.fromList items
 
 instance FromResponse Datum where
@@ -92,6 +111,12 @@ instance IsDatum Bool
 instance FromResponse Bool where
     parseResponse = responseAtomParser
 
+instance FromRSON Bool where
+    parseRSON = parseJSON
+
+instance ToRSON Bool where
+    toRSON = toJSON
+
 
 
 ------------------------------------------------------------------------------
@@ -104,6 +129,12 @@ instance IsDatum Double
 instance FromResponse Double where
     parseResponse = responseAtomParser
 
+instance FromRSON Double where
+    parseRSON = parseJSON
+
+instance ToRSON Double where
+    toRSON = toJSON
+
 
 
 ------------------------------------------------------------------------------
@@ -114,6 +145,12 @@ instance IsDatum Text
 
 instance FromResponse Text where
     parseResponse = responseAtomParser
+
+instance FromRSON Text where
+    parseRSON = parseJSON
+
+instance ToRSON Text where
+    toRSON = toJSON
 
 
 
@@ -129,16 +166,16 @@ instance FromResponse Array where
     parseResponse = responseAtomParser
 
 -- Arrays are encoded as a term MAKE_ARRAY.
-instance ToJSON Array where
-    toJSON v = A.Array $ V.fromList $
-        [ toJSON MAKE_ARRAY
-        , toJSON $ map toJSON (V.toList v)
-        , toJSON emptyOptions
+instance ToRSON Array where
+    toRSON v = A.Array $ V.fromList $
+        [ toRSON MAKE_ARRAY
+        , toJSON $ map toRSON (V.toList v)
+        , toRSON emptyOptions
         ]
 
-instance FromJSON Array where
-    parseJSON (A.Array v) = V.mapM parseJSON v
-    parseJSON _           = fail "Array"
+instance FromRSON Array where
+    parseRSON (A.Array v) = V.mapM parseRSON v
+    parseRSON _           = fail "Array"
 
 
 
@@ -159,6 +196,17 @@ instance IsObject Object
 instance FromResponse Object where
     parseResponse = responseAtomParser
 
+instance FromRSON Object where
+    parseRSON (A.Object o) = do
+        -- HashMap does not provide a mapM, what a shame :(
+        items <- mapM (\(k, v) -> (,) <$> pure k <*> parseRSON v) $ HMS.toList o
+        return $ HMS.fromList items
+
+    parseRSON _            = fail "Object"
+
+instance ToRSON Object where
+    toRSON = A.Object . HMS.fromList . map (\(k, v) -> (k, toRSON v)) . HMS.toList
+
 
 
 ------------------------------------------------------------------------------
@@ -172,8 +220,8 @@ data Table = Table
 instance Any        Table
 instance IsSequence Table
 
-instance ToJSON Table where
-    toJSON = error "toJSON Table: Server-only type"
+instance ToRSON Table where
+    toRSON = error "toRSON Table: Server-only type"
 
 
 
@@ -184,8 +232,8 @@ instance ToJSON Table where
 data SingleSelection = SingleSelection
     deriving (Show)
 
-instance ToJSON SingleSelection where
-    toJSON = error "toJSON SingleSelection: Server-only type"
+instance ToRSON SingleSelection where
+    toRSON = error "toRSON SingleSelection: Server-only type"
 
 instance Any      SingleSelection
 instance IsDatum  SingleSelection
@@ -200,8 +248,8 @@ instance IsObject SingleSelection
 data Database = Database
 
 instance Any Database
-instance ToJSON Database where
-    toJSON = error "toJSON Database: Server-only type"
+instance ToRSON Database where
+    toRSON = error "toRSON Database: Server-only type"
 
 
 
@@ -223,11 +271,11 @@ instance Show (Sequence a) where
     show (Done      v) = "Done " ++ (show $ V.length v)
     show (Partial _ v) = "Partial " ++ (show $ V.length v)
 
-instance (FromJSON a) => FromResponse (Sequence a) where
+instance (FromRSON a) => FromResponse (Sequence a) where
     parseResponse = responseSequenceParser
 
-instance ToJSON (Sequence a) where
-    toJSON = error "toJSON Sequence: Server-only type"
+instance ToRSON (Sequence a) where
+    toRSON = error "toRSON Sequence: Server-only type"
 
 instance (Any a) => Any (Sequence a)
 instance (Any a) => IsSequence (Sequence a)
@@ -236,7 +284,7 @@ instance (Any a) => IsSequence (Sequence a)
 
 ------------------------------------------------------------------------------
 -- | All types of functions which the server supports. Keep this in sync with
--- the protocol definition file, especially the ToJSON instance.
+-- the protocol definition file, especially the ToRSON instance.
 
 data TermType
     = ADD
@@ -252,18 +300,18 @@ data TermType
     | TABLE
 
 
-instance ToJSON TermType where
-    toJSON MAKE_ARRAY = A.Number 2
-    toJSON DB         = A.Number 14
-    toJSON TABLE      = A.Number 15
-    toJSON GET        = A.Number 16
-    toJSON GET_ALL    = A.Number 78
-    toJSON ADD        = A.Number 24
-    toJSON COERCE_TO  = A.Number 51
-    toJSON GET_FIELD  = A.Number 31
-    toJSON INSERT     = A.Number 56
-    toJSON LIMIT      = A.Number 71
-    toJSON APPEND     = A.Number 29
+instance ToRSON TermType where
+    toRSON MAKE_ARRAY = A.Number 2
+    toRSON DB         = A.Number 14
+    toRSON TABLE      = A.Number 15
+    toRSON GET        = A.Number 16
+    toRSON GET_ALL    = A.Number 78
+    toRSON ADD        = A.Number 24
+    toRSON COERCE_TO  = A.Number 51
+    toRSON GET_FIELD  = A.Number 31
+    toRSON INSERT     = A.Number 56
+    toRSON LIMIT      = A.Number 71
+    toRSON APPEND     = A.Number 29
 
 
 
@@ -274,12 +322,12 @@ data Exp a where
     Term     :: TermType -> [SomeExp] -> Object -> Exp a
 
 
-instance (ToJSON a) => ToJSON (Exp a) where
-    toJSON (Constant datum) =
-        toJSON datum
+instance (ToRSON a) => ToRSON (Exp a) where
+    toRSON (Constant datum) =
+        toRSON datum
 
-    toJSON (Term termType args opts) =
-        toJSON [toJSON termType, toJSON args, toJSON opts]
+    toRSON (Term termType args opts) =
+        A.Array $ V.fromList [toRSON termType, toJSON (map toRSON args), toRSON opts]
 
 
 -- | Convenience to for automatically converting a 'Text' to a constant
@@ -303,10 +351,10 @@ emptyOptions = HMS.empty
 -- arguments can, and often have, different types).
 
 data SomeExp where
-     SomeExp :: (ToJSON a, Any a) => Exp a -> SomeExp
+     SomeExp :: (ToRSON a, Any a) => Exp a -> SomeExp
 
-instance ToJSON SomeExp where
-    toJSON (SomeExp e) = toJSON e
+instance ToRSON SomeExp where
+    toRSON (SomeExp e) = toRSON e
 
 
 
@@ -319,15 +367,15 @@ data Query a
     | Stop
     | NoreplyWait
 
-instance (ToJSON a) => ToJSON (Query a) where
-    toJSON (Start term options) = A.Array $ V.fromList
+instance (ToRSON a) => ToRSON (Query a) where
+    toRSON (Start term options) = A.Array $ V.fromList
         [ A.Number 1
-        , toJSON term
-        , toJSON options
+        , toRSON term
+        , toJSON $ map toRSON options
         ]
-    toJSON Continue     = A.Array $ V.singleton (A.Number 2)
-    toJSON Stop         = A.Array $ V.singleton (A.Number 3)
-    toJSON NoreplyWait  = A.Array $ V.singleton (A.Number 4)
+    toRSON Continue     = A.Array $ V.singleton (A.Number 2)
+    toRSON Stop         = A.Array $ V.singleton (A.Number 3)
+    toRSON NoreplyWait  = A.Array $ V.singleton (A.Number 4)
 
 
 
@@ -372,18 +420,18 @@ class FromResponse a where
     parseResponse :: Response -> Parser a
 
 
-responseAtomParser :: (FromJSON a) => Response -> Parser a
+responseAtomParser :: (FromRSON a) => Response -> Parser a
 responseAtomParser r = case (responseType r, V.toList (responseResult r)) of
-    (SuccessAtom, [a]) -> parseJSON a
+    (SuccessAtom, [a]) -> parseRSON a
     _                  -> fail $ "responseAtomParser: Not a single-element vector " ++ show (responseResult r)
 
-responseSequenceParser :: (FromJSON a) => Response -> Parser (Sequence a)
+responseSequenceParser :: (FromRSON a) => Response -> Parser (Sequence a)
 responseSequenceParser r = case responseType r of
     SuccessSequence -> Done    <$> values
     SuccessPartial  -> Partial <$> pure (responseToken r) <*> values
     _               -> fail "responseSequenceParser: Unexpected type"
   where
-    values = V.mapM parseJSON (responseResult r)
+    values = V.mapM parseRSON (responseResult r)
 
 
 

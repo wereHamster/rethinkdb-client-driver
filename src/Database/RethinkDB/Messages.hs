@@ -66,13 +66,13 @@ handshakeReplyParser = do
     (T.decodeUtf8 . toStrict) <$> getLazyByteStringNul
 
 
-queryMessage :: (ToJSON a) => Token -> a -> BS.ByteString
+queryMessage :: (ToRSON a) => Token -> a -> BS.ByteString
 queryMessage token msg = runPut $ do
     putWord64host     token
     putWord32le       (fromIntegral $ BS.length buf)
     putLazyByteString buf
   where
-    buf = A.encode msg
+    buf = A.encode (toRSON msg)
 
 
 responseMessageParser :: Get Response
