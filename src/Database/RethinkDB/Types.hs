@@ -364,7 +364,7 @@ data Exp a where
 
     -- Index administration
     ListIndices    :: Exp Table -> Exp (Array Text)
-    CreateIndex    :: Exp Table -> Exp Text -> Exp Object
+    CreateIndex    :: (Any a) => Exp Table -> Exp Text -> Exp a -> Exp Object
     DropIndex      :: Exp Table -> Exp Text -> Exp Object
     IndexStatus    :: Exp Table -> [Exp Text] -> Exp (Array Object)
     WaitIndex      :: Exp Table -> [Exp Text] -> Exp Object
@@ -399,6 +399,11 @@ data Exp a where
     Filter         :: (IsSequence s, Any f) => Exp s -> Exp f -> Exp s
     Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
 
+    Var            :: (Any a) => Int -> Exp a
+    Function       :: (Any a, Any b, Any c) => [Exp a] -> Exp b -> Exp c
+    Call           :: (Any a) => Exp a -> [Exp Datum] -> Exp Datum
+
+
 instance (ToRSON a) => ToRSON (Exp a) where
     toRSON (Constant datum) =
         toRSON datum
@@ -427,8 +432,8 @@ instance (ToRSON a) => ToRSON (Exp a) where
     toRSON (ListIndices table) =
         simpleTerm 77 [SomeExp table]
 
-    toRSON (CreateIndex table name) =
-        simpleTerm 75 [SomeExp table, SomeExp name]
+    toRSON (CreateIndex table name f) =
+        simpleTerm 75 [SomeExp table, SomeExp name, SomeExp f]
 
     toRSON (DropIndex table name) =
         simpleTerm 76 [SomeExp table, SomeExp name]
@@ -497,6 +502,15 @@ instance (ToRSON a) => ToRSON (Exp a) where
 
     toRSON (Keys a) =
         simpleTerm 94 [SomeExp a]
+
+    toRSON (Var a) =
+        simpleTerm 10 [SomeExp $ constant $ (fromIntegral a :: Double)]
+
+    toRSON (Function vars a) =
+        simpleTerm 69 [SomeExp $ constant $ V.fromList $ map (\(Var v) -> Number (fromIntegral v :: Double)) vars, SomeExp a]
+
+    toRSON (Call f args) =
+        simpleTerm 64 ([SomeExp f] ++ map SomeExp args)
 
 
 simpleTerm :: Int -> [SomeExp] -> A.Value
