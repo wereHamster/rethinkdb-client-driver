@@ -348,6 +348,17 @@ instance (Any a) => IsSequence (Sequence a)
 
 
 ------------------------------------------------------------------------------
+-- | A 'Function' is a server-only type representing a function.
+
+data Function = MkFunction
+
+instance Any Function
+instance ToRSON Function where
+    toRSON = error "toRSON Function: Server-only type"
+
+
+
+------------------------------------------------------------------------------
 
 data Exp a where
     Constant       :: (IsDatum a) => a -> Exp a
@@ -400,8 +411,8 @@ data Exp a where
     Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
 
     Var            :: (Any a) => Int -> Exp a
-    Function       :: (Any a, Any b, Any c) => [Exp a] -> Exp b -> Exp c
-    Call           :: (Any a) => Exp a -> [Exp Datum] -> Exp Datum
+    Function       :: (Any a, Any b) => [Exp a] -> Exp b -> Exp Function
+    Call           :: Exp Function -> [Exp Datum] -> Exp Datum
 
 
 instance (ToRSON a) => ToRSON (Exp a) where
