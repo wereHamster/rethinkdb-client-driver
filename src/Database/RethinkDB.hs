@@ -70,9 +70,22 @@ run handle expr = do
 
     case reply of
         Left e -> return $ Left e
-        Right response -> return $ case A.parseEither parseResponse response of
-            Left e -> Left $ ProtocolError $ T.pack e
-            Right r -> Right r
+        Right response -> case responseType response of
+            ClientErrorType  -> mkError response ClientError
+            CompileErrorType -> mkError response CompileError
+            RuntimeErrorType -> mkError response RuntimeError
+            _                -> return $ parseMessage parseResponse response Right
+
+parseMessage :: (a -> A.Parser b) -> a -> (b -> Either Error c) -> Either Error c
+parseMessage parser value f = case A.parseEither parser value of
+    Left  e -> Left $ ProtocolError $ T.pack e
+    Right v -> f v
+
+mkError :: Response -> (T.Text -> Error) -> IO (Either Error a)
+mkError r e = return $ case V.toList (responseResult r) of
+    [a] -> parseMessage A.parseJSON a (Left . e)
+    _   -> Left $ ProtocolError $ "mkError: Could not parse error" <> T.pack (show (responseResult r))
+
 
 
 -- | Collect all the values in a sequence and make them available as
@@ -139,9 +152,7 @@ nextChunk handle (Partial token _) = do
     reply <- getResponse handle
     case reply of
         Left e -> return $ Left e
-        Right response -> case A.parseEither parseResponse response of
-            Left e -> return $ Left $ ProtocolError $ T.pack e
-            Right r -> return $ Right $ r
+        Right response -> return $ parseMessage parseResponse response Right
 
 
 getResponse :: Handle -> IO (Either Error Response)

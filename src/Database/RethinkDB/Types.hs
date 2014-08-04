@@ -660,17 +660,30 @@ responseParser _     _          =
 
 
 
-
 ------------------------------------------------------------------------------
--- Errors
+-- | Errors include a plain-text description which includes further details.
+-- The RethinkDB protocol also includes a backtrace which we currently don't
+-- parse.
 
 data Error
+
     = ProtocolError !Text
       -- ^ An error on the protocol level. Perhaps the socket was closed
-      -- unexpectedly, or the server sent a message which the driver could
-      -- not parse.
+      -- unexpectedly, or the server sent a message which the driver could not
+      -- parse.
 
-    | ClientError
-    | CompileError
-    | RuntimeError
+    | ClientError !Text
+      -- ^ Means the client is buggy. An example is if the client sends
+      -- a malformed protobuf, or tries to send [CONTINUE] for an unknown
+      -- token.
+
+    | CompileError !Text
+      -- ^ Means the query failed during parsing or type checking. For example,
+      -- if you pass too many arguments to a function.
+
+    | RuntimeError !Text
+      -- ^ Means the query failed at runtime. An example is if you add
+      -- together two values from a table, but they turn out at runtime to be
+      -- booleans rather than numbers.
+
     deriving (Eq, Show)
