@@ -8,7 +8,7 @@ module Database.RethinkDB
 
     , Error(..)
 
-    , Exp
+    , Exp(..)
     , Array, Object, Datum(..)
     , Sequence
     , constant
@@ -18,8 +18,6 @@ module Database.RethinkDB
     , eqTime
 
     , Any, IsDatum, IsObject, IsSequence
-
-    , module Database.RethinkDB.Terms
     ) where
 
 
@@ -32,7 +30,6 @@ import           Network.Socket   (Socket)
 import           Data.IORef
 
 import           Database.RethinkDB.Types
-import           Database.RethinkDB.Terms
 import           Database.RethinkDB.Messages
 
 

@@ -80,26 +80,26 @@ spec h = do
                 monadic $ (on (==) (fmap zonedTimeToUTC) (Right x)) <$> run h (constant x)
 
         describe "pure functions" $ do
-            it "add" $ property $ \(xs0 :: [Double]) -> monadic $ do
+            it "Add" $ property $ \(xs0 :: [Double]) -> monadic $ do
                 -- The list must not be empty, so we prepend a zero to it.
                 let xs = 0 : xs0
-                expectSuccess h (add $ map constant xs) (sum xs)
+                expectSuccess h (Add $ map constant xs) (sum xs)
 
-            it "eq" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
-                expectSuccess h (eq (constant a) (constant b)) (a == b)
-                expectSuccess h (eq (constant a) (constant a)) (a == a)
+            it "Eq" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
+                expectSuccess h (Eq (constant a) (constant b)) (a == b)
+                expectSuccess h (Eq (constant a) (constant a)) (a == a)
 
-            it "append" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
-                expectSuccess h (append (constant xs) (constant v)) (V.snoc xs v)
+            it "Append" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
+                expectSuccess h (Append (constant xs) (constant v)) (V.snoc xs v)
 
-            it "prepend" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
-                expectSuccess h (prepend (constant xs) (constant v)) (V.cons v xs)
+            it "Prepend" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
+                expectSuccess h (Prepend (constant xs) (constant v)) (V.cons v xs)
 
-            it "isEmpty" $ property $ \(xs :: Array Datum) -> monadic $ do
-                expectSuccess h (isEmpty (constant xs)) (V.null xs)
+            it "IsEmpty" $ property $ \(xs :: Array Datum) -> monadic $ do
+                expectSuccess h (IsEmpty (constant xs)) (V.null xs)
 
-            it "keys" $ property $ \(xs :: Array Text) -> monadic $ do
+            it "Keys" $ property $ \(xs :: Array Text) -> monadic $ do
                 let obj = HMS.fromList $ map (\x -> (x, String x)) $ V.toList xs
-                res0 <- run h $ keys (constant obj)
+                res0 <- run h $ Keys (constant obj)
                 let res = fmap (sort . V.toList) res0
                 return $ res == (Right $ nub $ sort $ V.toList xs)

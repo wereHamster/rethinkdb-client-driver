@@ -362,6 +362,13 @@ data Exp a where
     CreateTable    :: Exp Database -> Exp Text -> Exp Object
     DropTable      :: Exp Database -> Exp Text -> Exp Object
 
+    -- Index administration
+    ListIndices    :: Exp Table -> Exp (Array Text)
+    CreateIndex    :: Exp Table -> Exp Text -> Exp Object
+    DropIndex      :: Exp Table -> Exp Text -> Exp Object
+    IndexStatus    :: Exp Table -> [Exp Text] -> Exp (Array Object)
+    WaitIndex      :: Exp Table -> [Exp Text] -> Exp Object
+
     Database       :: Exp Text -> Exp Database
     Table          :: Exp Text -> Exp Table
     Coerce         :: (Any a, Any b) => Exp a -> Exp Text -> Exp b
@@ -370,13 +377,25 @@ data Exp a where
     Get            :: Exp Table -> Exp Text -> Exp SingleSelection
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
-    GetField       :: (Any s, Any r) => Exp s -> Exp Text -> Exp r
+
+    ObjectField :: (IsObject a) => Exp a -> Exp Text -> Exp Datum
+    -- Get a particular field from an object (or SingleSelection).
+
+    ExtractField :: (IsSequence a) => Exp a -> Exp Text -> Exp a
+    -- Like 'ObjectField' but over a sequence.
+
     Take           :: (Any a) => Exp (Sequence a) -> Exp Double -> Exp (Sequence a)
     Append         :: (Any a) => Exp (Array a) -> Exp a -> Exp (Array a)
     Prepend        :: (Any a) => Exp (Array a) -> Exp a -> Exp (Array a)
     IsEmpty        :: (IsSequence a) => Exp a -> Exp Bool
     Delete         :: (Any a) => Exp a -> Exp Object
-    Insert         :: Exp Table -> Object -> Object -> Exp Object
+
+    InsertObject   :: Exp Table -> Object -> Exp Object
+    -- Insert a single object into the table.
+
+    InsertSequence :: (IsSequence s) => Exp Table -> Exp s -> Exp Object
+    -- Insert a sequence into the table.
+
     Filter         :: (IsSequence s, Any f) => Exp s -> Exp f -> Exp s
     Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
 
@@ -405,6 +424,22 @@ instance (ToRSON a) => ToRSON (Exp a) where
         simpleTerm 61 [SomeExp db, SomeExp name]
 
 
+    toRSON (ListIndices table) =
+        simpleTerm 77 [SomeExp table]
+
+    toRSON (CreateIndex table name) =
+        simpleTerm 75 [SomeExp table, SomeExp name]
+
+    toRSON (DropIndex table name) =
+        simpleTerm 76 [SomeExp table, SomeExp name]
+
+    toRSON (IndexStatus table indices) =
+        simpleTerm 139 ([SomeExp table] ++ map SomeExp indices)
+
+    toRSON (WaitIndex table indices) =
+        simpleTerm 140 ([SomeExp table] ++ map SomeExp indices)
+
+
     toRSON (Database name) =
         simpleTerm 14 [SomeExp name]
 
@@ -414,13 +449,19 @@ instance (ToRSON a) => ToRSON (Exp a) where
     toRSON (Filter s f) =
         simpleTerm 39 [SomeExp s, SomeExp f]
 
-    toRSON (Insert table object options) =
-        termWithOptions 56 [SomeExp table, SomeExp (constant object)] options
+    toRSON (InsertObject table object) =
+        termWithOptions 56 [SomeExp table, SomeExp (constant object)] emptyOptions
+
+    toRSON (InsertSequence table s) =
+        termWithOptions 56 [SomeExp table, SomeExp s] emptyOptions
 
     toRSON (Delete selection) =
         simpleTerm 54 [SomeExp selection]
 
-    toRSON (GetField object field) =
+    toRSON (ObjectField object field) =
+        simpleTerm 31 [SomeExp object, SomeExp field]
+
+    toRSON (ExtractField object field) =
         simpleTerm 31 [SomeExp object, SomeExp field]
 
     toRSON (Coerce value typeName) =

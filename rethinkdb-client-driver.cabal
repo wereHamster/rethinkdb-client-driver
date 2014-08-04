@@ -48,7 +48,6 @@ library
 
     exposed-modules   : Database.RethinkDB
     other-modules     : Database.RethinkDB.Messages
-                      , Database.RethinkDB.Terms
                       , Database.RethinkDB.Types
 
     ghc-options       : -Wall
