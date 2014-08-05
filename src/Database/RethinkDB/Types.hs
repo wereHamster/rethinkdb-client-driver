@@ -63,11 +63,11 @@ toQuery :: (ToRSON a) => a -> A.Value
 toQuery e = evalState (toRSON e) (Context 0)
 
 
-newVar :: (Any a) => State Context (Exp a)
+newVar :: State Context Int
 newVar = do
     ix <- gets varCounter
     modify $ \s -> s { varCounter = ix + 1 }
-    return $ Var ix
+    return ix
 
 
 
@@ -79,6 +79,14 @@ newVar = do
 -- eventually converted to JSON.
 
 class (ToRSON a) => Any a
+
+instance (Any a, Any b) => Any (Exp a -> Exp b)
+instance (Any a, Any b) => ToRSON (Exp a -> Exp b) where
+    toRSON = undefined
+
+instance (Any a, Any b, Any c) => Any (Exp a -> Exp b -> Exp c)
+instance (Any a, Any b, Any c) => ToRSON (Exp a -> Exp b -> Exp c) where
+    toRSON = undefined
 
 
 
@@ -372,17 +380,6 @@ instance (Any a) => IsSequence (Sequence a)
 
 
 ------------------------------------------------------------------------------
--- | A 'Function' is a server-only type representing a function.
-
-data Function = MkFunction
-
-instance Any Function
-instance ToRSON Function where
-    toRSON = error "toRSON Function: Server-only type"
-
-
-
-------------------------------------------------------------------------------
 
 data Exp a where
     Constant       :: (IsDatum a) => a -> Exp a
@@ -435,8 +432,16 @@ data Exp a where
     Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
 
     Var            :: (Any a) => Int -> Exp a
-    Function       :: (Any a, Any b) => [Exp a] -> Exp b -> Exp Function
-    Call           :: Exp Function -> [Exp Datum] -> Exp Datum
+
+    Function :: (Any a) => State Context ([Int], Exp a) -> Exp f
+    -- Creates a function. The action should take care of allocating an
+    -- appropriate number of variables from the context. Note that you should
+    -- not use this constructor directly. There are 'Lift' instances for all
+    -- commonly used functions.
+
+    Call :: (Any f) => Exp f -> [SomeExp] -> Exp Datum
+    -- Call the given function. The function should take the same number of
+    -- arguments as there are provided.
 
 
 instance (ToRSON a) => ToRSON (Exp a) where
@@ -490,7 +495,7 @@ instance (ToRSON a) => ToRSON (Exp a) where
         simpleTerm 39 [SomeExp s, SomeExp f]
 
     toRSON (InsertObject table object) =
-        termWithOptions 56 [SomeExp table, SomeExp (constant object)] emptyOptions
+        termWithOptions 56 [SomeExp table, SomeExp (lift object)] emptyOptions
 
     toRSON (InsertSequence table s) =
         termWithOptions 56 [SomeExp table, SomeExp s] emptyOptions
@@ -539,13 +544,14 @@ instance (ToRSON a) => ToRSON (Exp a) where
         simpleTerm 94 [SomeExp a]
 
     toRSON (Var a) =
-        simpleTerm 10 [SomeExp $ constant $ (fromIntegral a :: Double)]
+        simpleTerm 10 [SomeExp $ lift $ (fromIntegral a :: Double)]
 
-    toRSON (Function vars a) =
-        simpleTerm 69 [SomeExp $ constant $ V.fromList $ map (\(Var v) -> Number (fromIntegral v :: Double)) vars, SomeExp a]
+    toRSON (Function a) = do
+        (vars, f) <- a
+        simpleTerm 69 [SomeExp $ Constant $ V.fromList $ map (Number . fromIntegral) vars, SomeExp f]
 
     toRSON (Call f args) =
-        simpleTerm 64 ([SomeExp f] ++ map SomeExp args)
+        simpleTerm 64 ([SomeExp f] ++ args)
 
 
 simpleTerm :: Int -> [SomeExp] -> State Context A.Value
@@ -564,12 +570,50 @@ termWithOptions termType args options = do
 -- | Convenience to for automatically converting a 'Text' to a constant
 -- expression.
 instance IsString (Exp Text) where
-   fromString = constant . fromString
+   fromString = lift . fromString
 
 
--- | Convert a 'Datum' to an 'Exp'.
-constant :: (IsDatum a) => a -> Exp a
-constant x = Constant x
+
+------------------------------------------------------------------------------
+-- | The class of types e which can be lifted into c. All basic Haskell types
+-- which can be represented as 'Exp' are instances of this, as well as certain
+-- types of functions (unary and binary).
+
+class Lift c e where
+    lift :: e -> c e
+
+instance Lift Exp Bool where
+    lift = Constant
+
+instance Lift Exp Double where
+    lift = Constant
+
+instance Lift Exp Text where
+    lift = Constant
+
+instance Lift Exp Object where
+    lift = Constant
+
+instance Lift Exp Datum where
+    lift = Constant
+
+instance Lift Exp ZonedTime where
+    lift = Constant
+
+instance Lift Exp (Array Datum) where
+    lift = Constant
+
+instance (Any a, Any b) => Lift Exp (Exp a -> Exp b) where
+    lift f = Function $ do
+        v1 <- newVar
+        return $ ([v1], f (Var v1))
+
+instance (Any a, Any b, Any c) => Lift Exp (Exp a -> Exp b -> Exp c) where
+    lift f = Function $ do
+        v1 <- newVar
+        v2 <- newVar
+        return $ ([v1, v2], f (Var v1) (Var v2))
+
 
 
 emptyOptions :: Object

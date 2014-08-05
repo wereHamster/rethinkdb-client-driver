@@ -67,39 +67,50 @@ spec h = do
     describe "roundtrips" $ do
         describe "primitive values" $ do
             it "Double" $ property $ \(x :: Double) ->
-                monadic $ ((Right x)==) <$> run h (constant x)
+                monadic $ ((Right x)==) <$> run h (lift x)
             it "Text" $ property $ \(x :: Text) ->
-                monadic $ ((Right x)==) <$> run h (constant x)
+                monadic $ ((Right x)==) <$> run h (lift x)
             it "Array" $ property $ \(x :: Array Datum) ->
-                monadic $ ((Right x)==) <$> run h (constant x)
+                monadic $ ((Right x)==) <$> run h (lift x)
             it "Object" $ property $ \(x :: Object) ->
-                monadic $ ((Right x)==) <$> run h (constant x)
+                monadic $ ((Right x)==) <$> run h (lift x)
             it "Datum" $ property $ \(x :: Datum) ->
-                monadic $ ((Right x)==) <$> run h (constant x)
+                monadic $ ((Right x)==) <$> run h (lift x)
             it "ZonedTime" $ property $ \(x :: ZonedTime) ->
-                monadic $ (on (==) (fmap zonedTimeToUTC) (Right x)) <$> run h (constant x)
+                monadic $ (on (==) (fmap zonedTimeToUTC) (Right x)) <$> run h (lift x)
 
-        describe "pure functions" $ do
-            it "Add" $ property $ \(xs0 :: [Double]) -> monadic $ do
-                -- The list must not be empty, so we prepend a zero to it.
-                let xs = 0 : xs0
-                expectSuccess h (Add $ map constant xs) (sum xs)
+    describe "function expressions" $ do
+        it "Add" $ property $ \(xs0 :: [Double]) -> monadic $ do
+            -- The list must not be empty, so we prepend a zero to it.
+            let xs = 0 : xs0
+            expectSuccess h (Add $ map lift xs) (sum xs)
 
-            it "Eq" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
-                expectSuccess h (Eq (constant a) (constant b)) (a == b)
-                expectSuccess h (Eq (constant a) (constant a)) (a == a)
+        it "Eq" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
+            expectSuccess h (Eq (lift a) (lift b)) (a == b)
+            expectSuccess h (Eq (lift a) (lift a)) (a == a)
 
-            it "Append" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
-                expectSuccess h (Append (constant xs) (constant v)) (V.snoc xs v)
+        it "Append" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
+            expectSuccess h (Append (lift xs) (lift v)) (V.snoc xs v)
 
-            it "Prepend" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
-                expectSuccess h (Prepend (constant xs) (constant v)) (V.cons v xs)
+        it "Prepend" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
+            expectSuccess h (Prepend (lift xs) (lift v)) (V.cons v xs)
 
-            it "IsEmpty" $ property $ \(xs :: Array Datum) -> monadic $ do
-                expectSuccess h (IsEmpty (constant xs)) (V.null xs)
+        it "IsEmpty" $ property $ \(xs :: Array Datum) -> monadic $ do
+            expectSuccess h (IsEmpty (lift xs)) (V.null xs)
 
-            it "Keys" $ property $ \(xs :: Array Text) -> monadic $ do
-                let obj = HMS.fromList $ map (\x -> (x, String x)) $ V.toList xs
-                res0 <- run h $ Keys (constant obj)
-                let res = fmap (sort . V.toList) res0
-                return $ res == (Right $ nub $ sort $ V.toList xs)
+        it "Keys" $ property $ \(xs :: Array Text) -> monadic $ do
+            let obj = HMS.fromList $ map (\x -> (x, String x)) $ V.toList xs
+            res0 <- run h $ Keys (lift obj)
+            let res = fmap (sort . V.toList) res0
+            return $ res == (Right $ nub $ sort $ V.toList xs)
+
+    describe "function calls" $ do
+        let add    = lift $ \a b -> Add [a, b]
+        let addOne = lift $ \a   -> Add [lift 1, a]
+
+        it "Add" $ property $ \(a :: Double, b :: Double) -> monadic $ do
+            res <- run h $ Call add [SomeExp $ lift $ Number a, SomeExp $ lift $ Number b]
+            return $ res == (Right $ Number $ a + b)
+
+            res <- run h $ Call addOne [SomeExp $ lift $ Number a]
+            return $ res == (Right $ Number $ a + 1)

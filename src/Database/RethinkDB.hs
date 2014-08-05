@@ -8,14 +8,14 @@ module Database.RethinkDB
 
     , Error(..)
 
-    , Exp(..)
+    , Exp(..), SomeExp(..)
     , Array, Object, Datum(..)
     , Sequence
-    , constant
     , Table, Database, SingleSelection
     , Res, Result, FromResponse
     , emptyOptions
     , eqTime
+    , lift
 
     , Any, IsDatum, IsObject, IsSequence
     ) where
