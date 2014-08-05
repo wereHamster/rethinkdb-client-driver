@@ -110,7 +110,7 @@ collect handle s@(Partial token x) = do
 start :: (Any a) => Handle -> Exp a -> IO Token
 start handle term = do
     token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
-    sendMessage (hSocket handle) (queryMessage token (Start term []))
+    sendMessage (hSocket handle) (queryMessage token (Start term emptyOptions))
     return token
 
 

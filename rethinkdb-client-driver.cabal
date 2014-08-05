@@ -38,6 +38,7 @@ library
                       , binary     >= 0.7.2.1
                       , bytestring
                       , hashable
+                      , mtl
                       , network
                       , old-locale
                       , scientific

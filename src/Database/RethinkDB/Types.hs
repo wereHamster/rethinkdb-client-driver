@@ -11,6 +11,7 @@ module Database.RethinkDB.Types where
 
 import           Control.Applicative
 import           Control.Monad
+import           Control.Monad.State (State, gets, modify, evalState)
 
 import           Data.Function
 import           Data.Word
@@ -45,10 +46,28 @@ class FromRSON a where
 -- | See 'FromRSON'.
 
 class ToRSON a where
-    toRSON :: a -> A.Value
+    toRSON :: a -> State Context A.Value
 
-instance (ToRSON a, ToRSON b) => ToRSON (a,b) where
-    toRSON (a,b) = toJSON (toRSON a, toRSON b)
+
+
+------------------------------------------------------------------------------
+-- | Building a RethinkDB query from an expression is a stateful process, and
+-- is done using this as the context.
+
+data Context = Context
+    { varCounter :: Int
+      -- ^ How many 'Var's have been allocated. See 'newVar'.
+    }
+
+toQuery :: (ToRSON a) => a -> A.Value
+toQuery e = evalState (toRSON e) (Context 0)
+
+
+newVar :: (Any a) => State Context (Exp a)
+newVar = do
+    ix <- gets varCounter
+    modify $ \s -> s { varCounter = ix + 1 }
+    return $ Var ix
 
 
 
@@ -97,7 +116,7 @@ instance Eq Datum where
     _          == _          = False
 
 instance ToRSON Datum where
-    toRSON (Null    ) = A.Null
+    toRSON (Null    ) = return $ A.Null
     toRSON (Bool   x) = toRSON x
     toRSON (Number x) = toRSON x
     toRSON (String x) = toRSON x
@@ -134,7 +153,7 @@ instance FromRSON Bool where
     parseRSON = parseJSON
 
 instance ToRSON Bool where
-    toRSON = toJSON
+    toRSON = return . toJSON
 
 
 
@@ -152,7 +171,7 @@ instance FromRSON Double where
     parseRSON = parseJSON
 
 instance ToRSON Double where
-    toRSON = toJSON
+    toRSON = return . toJSON
 
 
 
@@ -169,7 +188,7 @@ instance FromRSON Text where
     parseRSON = parseJSON
 
 instance ToRSON Text where
-    toRSON = toJSON
+    toRSON = return . toJSON
 
 
 
@@ -187,11 +206,14 @@ instance (FromRSON a) => FromResponse (Array a) where
 
 -- Arrays are encoded as a term MAKE_ARRAY (2).
 instance (ToRSON a) => ToRSON (Array a) where
-    toRSON v = A.Array $ V.fromList $
-        [ A.Number 2
-        , toJSON $ map toRSON (V.toList v)
-        , toRSON emptyOptions
-        ]
+    toRSON v = do
+        vals    <- mapM toRSON (V.toList v)
+        options <- toRSON emptyOptions
+        return $ A.Array $ V.fromList $
+            [ A.Number 2
+            , toJSON vals
+            , toJSON $ options
+            ]
 
 instance (FromRSON a) => FromRSON (Array a) where
     parseRSON (A.Array v) = V.mapM parseRSON v
@@ -225,7 +247,9 @@ instance FromRSON Object where
     parseRSON _            = fail "Object"
 
 instance ToRSON Object where
-    toRSON = A.Object . HMS.fromList . map (\(k, v) -> (k, toRSON v)) . HMS.toList
+    toRSON obj = do
+        items <- mapM (\(k, v) -> (,) <$> pure k <*> toRSON v) (HMS.toList obj)
+        return $ A.Object $ HMS.fromList items
 
 
 
@@ -243,7 +267,7 @@ instance FromResponse ZonedTime where
     parseResponse = responseAtomParser
 
 instance ToRSON ZonedTime where
-    toRSON t = A.object
+    toRSON t = return $ A.object
         [ "$reql_type$" .= ("TIME" :: Text)
         , "timezone"    .= (timeZoneOffsetString $ zonedTimeZone t)
         , "epoch_time"  .= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC t :: Double)
@@ -524,13 +548,17 @@ instance (ToRSON a) => ToRSON (Exp a) where
         simpleTerm 64 ([SomeExp f] ++ map SomeExp args)
 
 
-simpleTerm :: Int -> [SomeExp] -> A.Value
-simpleTerm termType args =
-    A.Array $ V.fromList [toJSON termType, toJSON (map toRSON args)]
+simpleTerm :: Int -> [SomeExp] -> State Context A.Value
+simpleTerm termType args = do
+    args' <- mapM toRSON args
+    return $ A.Array $ V.fromList [toJSON termType, toJSON args']
 
-termWithOptions :: Int -> [SomeExp] -> Object -> A.Value
-termWithOptions termType args options =
-    A.Array $ V.fromList [toJSON termType, toJSON (map toRSON args), toRSON options]
+termWithOptions :: Int -> [SomeExp] -> Object -> State Context A.Value
+termWithOptions termType args options = do
+    args'    <- mapM toRSON args
+    options' <- toRSON options
+
+    return $ A.Array $ V.fromList [toJSON termType, toJSON args', toJSON options']
 
 
 -- | Convenience to for automatically converting a 'Text' to a constant
@@ -564,21 +592,17 @@ instance ToRSON SomeExp where
 ------------------------------------------------------------------------------
 -- Query
 
-data Query a
-    = Start (Exp a) [(Text, SomeExp)]
-    | Continue
-    | Stop
-    | NoreplyWait
+data Query a = Start (Exp a) Object
 
 instance (ToRSON a) => ToRSON (Query a) where
-    toRSON (Start term options) = A.Array $ V.fromList
-        [ A.Number 1
-        , toRSON term
-        , toJSON $ map toRSON options
-        ]
-    toRSON Continue     = A.Array $ V.singleton (A.Number 2)
-    toRSON Stop         = A.Array $ V.singleton (A.Number 3)
-    toRSON NoreplyWait  = A.Array $ V.singleton (A.Number 4)
+    toRSON (Start term options) = do
+        term'    <- toRSON term
+        options' <- toRSON options
+        return $ A.Array $ V.fromList
+            [ A.Number 1
+            , term'
+            , toJSON $ options'
+            ]
 
 
 

@@ -72,7 +72,7 @@ queryMessage token msg = runPut $ do
     putWord32le       (fromIntegral $ BS.length buf)
     putLazyByteString buf
   where
-    buf = A.encode (toRSON msg)
+    buf = A.encode $ toQuery msg
 
 
 responseMessageParser :: Get Response
