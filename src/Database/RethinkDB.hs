@@ -16,6 +16,7 @@ module Database.RethinkDB
     , emptyOptions
     , eqTime
     , lift
+    , call1, call2
 
     , Any, IsDatum, IsObject, IsSequence
     ) where

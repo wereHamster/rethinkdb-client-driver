@@ -439,7 +439,7 @@ data Exp a where
     -- not use this constructor directly. There are 'Lift' instances for all
     -- commonly used functions.
 
-    Call :: (Any f) => Exp f -> [SomeExp] -> Exp Datum
+    Call :: (Any f, Any r) => Exp f -> [SomeExp] -> Exp r
     -- Call the given function. The function should take the same number of
     -- arguments as there are provided.
 
@@ -614,6 +614,26 @@ instance (Any a, Any b, Any c) => Lift Exp (Exp a -> Exp b -> Exp c) where
         v2 <- newVar
         return $ ([v1, v2], f (Var v1) (Var v2))
 
+
+
+------------------------------------------------------------------------------
+-- 'call1', 'call2' etc generate a function call expression. These should be
+-- used instead of the 'Call' constructor because they provide type safety.
+
+-- | Call an unary function with the given argument.
+call1 :: (Any a, Any r)
+      => Exp (Exp a -> Exp r)
+      -> Exp a
+      -> Exp r
+call1 f a = Call f [SomeExp a]
+
+
+-- | Call an binary function with the given arguments.
+call2 :: (Any a, Any b, Any r)
+      => Exp (Exp a -> Exp b -> Exp r)
+      -> Exp a -> Exp b
+      -> Exp r
+call2 f a b = Call f [SomeExp a, SomeExp b]
 
 
 emptyOptions :: Object

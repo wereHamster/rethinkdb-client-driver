@@ -109,8 +109,8 @@ spec h = do
         let addOne = lift $ \a   -> Add [lift 1, a]
 
         it "Add" $ property $ \(a :: Double, b :: Double) -> monadic $ do
-            res <- run h $ Call add [SomeExp $ lift $ Number a, SomeExp $ lift $ Number b]
-            return $ res == (Right $ Number $ a + b)
+            res <- run h $ call2 add (lift a) (lift b)
+            return $ res == (Right $ a + b)
 
-            res <- run h $ Call addOne [SomeExp $ lift $ Number a]
-            return $ res == (Right $ Number $ a + 1)
+            res <- run h $ call1 addOne (lift a)
+            return $ res == (Right $ a + 1)
