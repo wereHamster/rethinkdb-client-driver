@@ -1,33 +1,49 @@
-A Haskell client driver for RethinkDB
+# Haskell client driver for RethinkDB
 
 It differs from the other driver ([rethinkdb][rethinkdb-haskell]) in that it
-uses advanced Haskell magic to add proper types to the terms. In particular,
-the term used in the query and its result type are connected with each other.
+uses advanced Haskell magic to properly type the terms, queries and responses.
 
-Example:
+
+# Structure and usage
+
+The library exposes a single module, `Database.RethinkDB`. There should be
+very little which can conflict with other code, so you should be able to
+import it unqualified.
+
+To be able to run expressions on the server, you first have to create
+a handle, this you can do with `newHandle`. Currently it always connects to
+"localhost" and the default RethinkDB client driver port.
+
+Expressions have the type `Exp a`, where the `a` denotes the result you would
+get when you run the expression. You can use `lift` to lift many basic Haskell
+types (Double, Text, Bool) and certain functions (unary and binary) into
+RethinkDB expressions.
+
+RethinkDB uses JSON for encoding on the protocol level, but certain types (eg.
+time) have non-standard encoding. This is why the driver uses a separate type
+class (`FromRSON` / `ToRSON`) to describe types which can be sent over the
+wire.
+
+
+# Examples
+
+Add two numbers, one and two. Here we lift the addition function and its
+arguments into `Exp`, and then use `call2` to call it.
 
 ```haskell
--- An expression which yields the number one.
-one :: Exp Double
-one = constant 1
+h <- newHandle
+res <- run h $ call2 (lift (+)) (lift 1) (lift 2)
+print res
+-- Should print 'Right 3.0'
+```
 
--- An expression which yields a reference to the test table. Tables can be
--- used as input into other functions. Or they are converted into a 'Sequence'
--- when used as the top-level query expression.
-testTable :: Exp Table
-testTable = table "test"
+Get all objects in a table.
 
-main :: IO ()
-main = do
-    h <- newHandle
-
-    -- Here Haskell knows that the type of res is 'Either Error Double',
-    -- because the expression was of type 'Double'
-    res1 <- run h one
-
-    -- Table is converted to a 'Sequence Datum' on the client. This means the
-    -- type of 'res2' is correctly inferred to be 'Either Error (Sequence Datum)'.
-    res2 <- run h testTable
+```haskell
+h <- newHandle
+Right sequence <- run h $ Table "test"
+objs <- collect h sequence
+-- objs is now a 'Vector' of all objects in the test table.
 ```
 
 
