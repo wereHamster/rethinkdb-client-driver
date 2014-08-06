@@ -105,12 +105,16 @@ spec h = do
             return $ res == (Right $ nub $ sort $ V.toList xs)
 
     describe "function calls" $ do
-        let add    = lift $ \a b -> Add [a, b]
-        let addOne = lift $ \a   -> Add [lift 1, a]
-
         it "Add" $ property $ \(a :: Double, b :: Double) -> monadic $ do
-            res <- run h $ call2 add (lift a) (lift b)
+            res <- run h $ call2 (lift (+)) (lift a) (lift b)
             return $ res == (Right $ a + b)
 
-            res <- run h $ call1 addOne (lift a)
+            res <- run h $ call1 (lift (1+)) (lift a)
             return $ res == (Right $ a + 1)
+
+        it "Multiply" $ property $ \(a :: Double, b :: Double) -> monadic $ do
+            res <- run h $ call2 (lift (*)) (lift a) (lift b)
+            return $ res == (Right $ a * b)
+
+            res <- run h $ call1 (lift (3*)) (lift a)
+            return $ res == (Right $ a * 3)

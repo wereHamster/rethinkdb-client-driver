@@ -404,11 +404,13 @@ data Exp a where
     Database       :: Exp Text -> Exp Database
     Table          :: Exp Text -> Exp Table
     Coerce         :: (Any a, Any b) => Exp a -> Exp Text -> Exp b
-    Add            :: [Exp Double] -> Exp Double
     Eq             :: (Any a, Any b) => Exp a -> Exp b -> Exp Bool
     Get            :: Exp Table -> Exp Text -> Exp SingleSelection
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
+
+    Add            :: (Any a, Num a) => [Exp a] -> Exp a
+    Multiply       :: (Any a, Num a) => [Exp a] -> Exp a
 
     ObjectField :: (IsObject a) => Exp a -> Exp Text -> Exp Datum
     -- Get a particular field from an object (or SingleSelection).
@@ -515,6 +517,9 @@ instance (ToRSON a) => ToRSON (Exp a) where
     toRSON (Add values) =
         simpleTerm 24 (map SomeExp values)
 
+    toRSON (Multiply values) =
+        simpleTerm 26 (map SomeExp values)
+
     toRSON (Eq a b) =
         simpleTerm 17 [SomeExp a, SomeExp b]
 
@@ -571,6 +576,16 @@ termWithOptions termType args options = do
 -- expression.
 instance IsString (Exp Text) where
    fromString = lift . fromString
+
+
+instance (IsDatum a, Any a, Num a) => Num (Exp a) where
+    fromInteger = Constant . fromInteger
+
+    a + b = Add [a, b]
+    a * b = Multiply [a, b]
+
+    abs _    = error "Num (Exp a): abs not implemented"
+    signum _ = error "Num (Exp a): signum not implemented"
 
 
 
