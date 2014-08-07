@@ -55,7 +55,7 @@ instance (Monad m, Serial m a) => Serial m (Vector a) where
 
 main :: IO ()
 main = do
-    h <- newHandle
+    h <- newHandle "localhost" defaultPort Nothing
     hspec $ spec h
 
 

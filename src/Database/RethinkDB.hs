@@ -3,7 +3,7 @@
 
 module Database.RethinkDB
     ( Handle
-    , newHandle
+    , defaultPort, newHandle
     , run, nextChunk, collect
 
     , Error(..)
@@ -23,7 +23,10 @@ module Database.RethinkDB
 
 
 import           Data.Monoid      ((<>))
+
+import           Data.Text        (Text)
 import qualified Data.Text        as T
+
 import qualified Data.Vector      as V
 import qualified Data.Aeson.Types as A
 
@@ -43,14 +46,19 @@ data Handle = Handle
     }
 
 
+-- | The default port where RethinkDB accepts cliend driver connections.
+defaultPort :: Int
+defaultPort = 28015
+
+
 -- | Create a new handle to the RethinkDB server.
-newHandle :: IO Handle
-newHandle = do
-    sock <- createSocket
+newHandle :: Text -> Int -> Maybe Text -> IO Handle
+newHandle host port mbAuth = do
+    sock <- createSocket host port
 
     -- Do the handshake dance. Note that we currently ignore the reply and
     -- assume it is "SUCCESS".
-    sendMessage sock handshakeMessage
+    sendMessage sock (handshakeMessage mbAuth)
     _reply <- recvMessage sock handshakeReplyParser
 
     -- RethinkDB seems to expect the token to never be null. So we start with

@@ -28,9 +28,9 @@ import           Database.RethinkDB.Types
 
 
 
-createSocket :: IO Socket
-createSocket = do
-    ai:_ <- getAddrInfo (Just hints) (Just "localhost") (Just "28015")
+createSocket :: Text -> Int -> IO Socket
+createSocket host port = do
+    ai:_ <- getAddrInfo (Just hints) (Just $ T.unpack host) (Just $ show port)
     sock <- socket (addrFamily ai) (addrSocketType ai) (addrProtocol ai)
     connect sock (addrAddress ai)
     return sock
@@ -54,11 +54,18 @@ recvMessage sock parser = go (runGetIncremental parser)
 
 
 
-handshakeMessage :: BS.ByteString
-handshakeMessage = runPut $ do
-    putWord32le 0x5f75e83e -- V0_3
-    putWord32le 0          -- No authentication
-    putWord32le 0x7e6970c7 -- JSON
+handshakeMessage :: Maybe Text -> BS.ByteString
+handshakeMessage mbAuth = runPut $ do
+    -- Protocol version: V0_3
+    putWord32le 0x5f75e83e
+
+    -- Authentication
+    flip (maybe (putWord32le 0)) mbAuth $ \auth -> do
+        putWord32le   $ fromIntegral $ T.length auth
+        putByteString $ T.encodeUtf8 auth
+
+    -- Protocol type: JSON
+    putWord32le 0x7e6970c7
 
 
 handshakeReplyParser :: Get Text
