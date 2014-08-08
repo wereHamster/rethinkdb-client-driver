@@ -389,9 +389,6 @@ instance Term (Sequence a) where
 
 instance IsSequence (Sequence a)
 
-instance Term (IsSequence a) where
-    toTerm = undefined
-
 
 
 ------------------------------------------------------------------------------
