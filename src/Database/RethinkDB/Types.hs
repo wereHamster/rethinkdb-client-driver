@@ -35,6 +35,16 @@ import           GHC.Generics
 
 
 ------------------------------------------------------------------------------
+-- | A Term is a JSON expression which can be sent to the server. Building a
+-- term is a stateful operation, so the whole process happens inside a 'State'
+-- monad.
+
+class Term a where
+    toTerm :: a -> State Context A.Value
+
+
+
+------------------------------------------------------------------------------
 -- | A class describing a type which can be converted to the RethinkDB-specific
 -- wire protocol. It is based on JSON, but certain types use a presumably more
 -- efficient encoding.
@@ -46,7 +56,7 @@ class FromRSON a where
 -- | See 'FromRSON'.
 
 class ToRSON a where
-    toRSON :: a -> State Context A.Value
+    toRSON :: a -> A.Value
 
 
 
@@ -59,34 +69,17 @@ data Context = Context
       -- ^ How many 'Var's have been allocated. See 'newVar'.
     }
 
-toQuery :: (ToRSON a) => a -> A.Value
-toQuery e = evalState (toRSON e) (Context 0)
+
+compileTerm :: State Context A.Value -> A.Value
+compileTerm e = evalState e (Context 0)
 
 
+-- | Allocate a new var index from the context.
 newVar :: State Context Int
 newVar = do
     ix <- gets varCounter
     modify $ \s -> s { varCounter = ix + 1 }
     return ix
-
-
-
-------------------------------------------------------------------------------
--- | Any value which can appear in RQL terms.
---
--- For convenience we require that it can be converted to JSON, but that is
--- not required for all types. Only types which satisfy 'IsDatum' are
--- eventually converted to JSON.
-
-class (ToRSON a) => Any a
-
-instance (Any a, Any b) => Any (Exp a -> Exp b)
-instance (Any a, Any b) => ToRSON (Exp a -> Exp b) where
-    toRSON = undefined
-
-instance (Any a, Any b, Any c) => Any (Exp a -> Exp b -> Exp c)
-instance (Any a, Any b, Any c) => ToRSON (Exp a -> Exp b -> Exp c) where
-    toRSON = undefined
 
 
 
@@ -105,10 +98,9 @@ data Datum
     deriving (Show, Generic)
 
 
-class (Any a) => IsDatum a
+class (Term a) => IsDatum a
 
 
-instance Any     Datum
 instance IsDatum Datum
 
 -- | We can't automatically derive 'Eq' because 'ZonedTime' does not have an
@@ -124,7 +116,7 @@ instance Eq Datum where
     _          == _          = False
 
 instance ToRSON Datum where
-    toRSON (Null    ) = return $ A.Null
+    toRSON (Null    ) = A.Null
     toRSON (Bool   x) = toRSON x
     toRSON (Number x) = toRSON x
     toRSON (String x) = toRSON x
@@ -143,6 +135,9 @@ instance FromRSON Datum where
         items <- mapM (\(k, v) -> (,) <$> pure k <*> parseRSON v) $ HMS.toList x
         return $ Object $ HMS.fromList items
 
+instance Term Datum where
+    toTerm = return . toRSON
+
 instance FromResponse Datum where
     parseResponse = responseAtomParser
 
@@ -151,7 +146,6 @@ instance FromResponse Datum where
 ------------------------------------------------------------------------------
 -- | For a boolean type, we're reusing the standard Haskell 'Bool' type.
 
-instance Any     Bool
 instance IsDatum Bool
 
 instance FromResponse Bool where
@@ -161,7 +155,10 @@ instance FromRSON Bool where
     parseRSON = parseJSON
 
 instance ToRSON Bool where
-    toRSON = return . toJSON
+    toRSON = toJSON
+
+instance Term Bool where
+    toTerm = return . toRSON
 
 
 
@@ -169,7 +166,6 @@ instance ToRSON Bool where
 -- | Numbers are 'Double' (unlike 'Aeson', which uses 'Scientific'). No
 -- particular reason.
 
-instance Any     Double
 instance IsDatum Double
 
 instance FromResponse Double where
@@ -179,14 +175,16 @@ instance FromRSON Double where
     parseRSON = parseJSON
 
 instance ToRSON Double where
-    toRSON = return . toJSON
+    toRSON = toJSON
+
+instance Term Double where
+    toTerm = return . toRSON
 
 
 
 ------------------------------------------------------------------------------
 -- | For strings, we're using the Haskell 'Text' type.
 
-instance Any     Text
 instance IsDatum Text
 
 instance FromResponse Text where
@@ -196,7 +194,10 @@ instance FromRSON Text where
     parseRSON = parseJSON
 
 instance ToRSON Text where
-    toRSON = return . toJSON
+    toRSON = toJSON
+
+instance Term Text where
+    toTerm = return . toRSON
 
 
 
@@ -205,7 +206,6 @@ instance ToRSON Text where
 
 type Array a = Vector a
 
-instance (Any a)     => Any        (Array a)
 instance (IsDatum a) => IsDatum    (Array a)
 instance (IsDatum a) => IsSequence (Array a)
 
@@ -214,18 +214,25 @@ instance (FromRSON a) => FromResponse (Array a) where
 
 -- Arrays are encoded as a term MAKE_ARRAY (2).
 instance (ToRSON a) => ToRSON (Array a) where
-    toRSON v = do
-        vals    <- mapM toRSON (V.toList v)
-        options <- toRSON emptyOptions
+    toRSON v = A.Array $ V.fromList $
+        [ A.Number 2
+        , toJSON $ map toRSON (V.toList v)
+        , toJSON $ toRSON emptyOptions
+        ]
+
+instance (FromRSON a) => FromRSON (Array a) where
+    parseRSON (A.Array v) = V.mapM parseRSON v
+    parseRSON _           = fail "Array"
+
+instance (Term a) => Term (Array a) where
+    toTerm v = do
+        vals    <- mapM toTerm (V.toList v)
+        options <- toTerm emptyOptions
         return $ A.Array $ V.fromList $
             [ A.Number 2
             , toJSON vals
             , toJSON $ options
             ]
-
-instance (FromRSON a) => FromRSON (Array a) where
-    parseRSON (A.Array v) = V.mapM parseRSON v
-    parseRSON _           = fail "Array"
 
 
 
@@ -236,10 +243,9 @@ instance (FromRSON a) => FromRSON (Array a) where
 type Object = HashMap Text Datum
 
 
-class (IsDatum a) => IsObject a
+class (Term a, IsDatum a) => IsObject a
 
 
-instance Any      Object
 instance IsDatum  Object
 instance IsObject Object
 
@@ -255,9 +261,10 @@ instance FromRSON Object where
     parseRSON _            = fail "Object"
 
 instance ToRSON Object where
-    toRSON obj = do
-        items <- mapM (\(k, v) -> (,) <$> pure k <*> toRSON v) (HMS.toList obj)
-        return $ A.Object $ HMS.fromList items
+    toRSON = A.Object . HMS.map toRSON
+
+instance Term Object where
+    toTerm = return . toRSON
 
 
 
@@ -267,7 +274,6 @@ instance ToRSON Object where
 -- used by 'Aeson'. Therefore we have a custom 'FromRSON' and 'ToRSON'
 -- instances.
 
-instance Any      ZonedTime
 instance IsDatum  ZonedTime
 instance IsObject ZonedTime
 
@@ -275,7 +281,7 @@ instance FromResponse ZonedTime where
     parseResponse = responseAtomParser
 
 instance ToRSON ZonedTime where
-    toRSON t = return $ A.object
+    toRSON t = A.object
         [ "$reql_type$" .= ("TIME" :: Text)
         , "timezone"    .= (timeZoneOffsetString $ zonedTimeZone t)
         , "epoch_time"  .= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC t :: Double)
@@ -298,6 +304,10 @@ instance FromRSON ZonedTime where
 
     parseRSON _           = fail "Time"
 
+instance Term ZonedTime where
+    toTerm = return . toRSON
+
+
 
 -- | Comparing two times is done on the local time, regardless of the timezone.
 -- This is exactly how the RethinkDB server does it.
@@ -314,11 +324,13 @@ eqTime = (==) `on` zonedTimeToUTC
 
 data Table = MkTable
 
-instance Any        Table
 instance IsSequence Table
 
 instance ToRSON Table where
     toRSON = error "toRSON Table: Server-only type"
+
+instance Term Table where
+    toTerm = error "toTerm Table: Server-only type"
 
 
 
@@ -329,10 +341,9 @@ instance ToRSON Table where
 data SingleSelection = SingleSelection
     deriving (Show)
 
-instance ToRSON SingleSelection where
-    toRSON = error "toRSON SingleSelection: Server-only type"
+instance Term SingleSelection where
+    toTerm = error "toTerm SingleSelection: Server-only type"
 
-instance Any      SingleSelection
 instance IsDatum  SingleSelection
 instance IsObject SingleSelection
 
@@ -344,9 +355,8 @@ instance IsObject SingleSelection
 
 data Database = MkDatabase
 
-instance Any Database
-instance ToRSON Database where
-    toRSON = error "toRSON Database: Server-only type"
+instance Term Database where
+    toTerm = error "toTerm Database: Server-only type"
 
 
 
@@ -361,7 +371,7 @@ data Sequence a
     | Partial !Token !(Vector a)
 
 
-class Any a => IsSequence a
+class (Term a) => IsSequence a
 
 
 instance Show (Sequence a) where
@@ -374,55 +384,78 @@ instance (FromRSON a) => FromResponse (Sequence a) where
 instance ToRSON (Sequence a) where
     toRSON = error "toRSON Sequence: Server-only type"
 
-instance (Any a) => Any (Sequence a)
-instance (Any a) => IsSequence (Sequence a)
+instance Term (Sequence a) where
+    toTerm = error "toTerm Sequence: Server-only type"
+
+instance IsSequence (Sequence a)
+
+instance Term (IsSequence a) where
+    toTerm = undefined
 
 
 
 ------------------------------------------------------------------------------
 
 data Exp a where
-    Constant       :: (IsDatum a) => a -> Exp a
+    Constant :: (ToRSON a) => a -> Exp a
+    -- Any object which can be converted to RSON can be treated as a constant.
+    -- Furthermore, many basic Haskell types have a 'Lift' instance which turns
+    -- their values into constants.
 
+
+    --------------------------------------------------------------------------
     -- Database administration
+
     ListDatabases  :: Exp (Array Text)
     CreateDatabase :: Exp Text -> Exp Object
     DropDatabase   :: Exp Text -> Exp Object
 
+
+    --------------------------------------------------------------------------
     -- Table administration
+
     ListTables     :: Exp Database -> Exp (Array Text)
     CreateTable    :: Exp Database -> Exp Text -> Exp Object
     DropTable      :: Exp Database -> Exp Text -> Exp Object
 
+
+    --------------------------------------------------------------------------
     -- Index administration
+
     ListIndices    :: Exp Table -> Exp (Array Text)
-    CreateIndex    :: (Any a) => Exp Table -> Exp Text -> Exp a -> Exp Object
+
+    CreateIndex    :: Exp Table -> Exp Text -> (Exp Object -> Exp Datum) -> Exp Object
+    -- Create a new secondary index on the table. The index has a name and a
+    -- projection function which is applied to every object which is added to the table.
+
     DropIndex      :: Exp Table -> Exp Text -> Exp Object
     IndexStatus    :: Exp Table -> [Exp Text] -> Exp (Array Object)
     WaitIndex      :: Exp Table -> [Exp Text] -> Exp Object
 
+
     Database       :: Exp Text -> Exp Database
     Table          :: Exp Text -> Exp Table
-    Coerce         :: (Any a, Any b) => Exp a -> Exp Text -> Exp b
-    Eq             :: (Any a, Any b) => Exp a -> Exp b -> Exp Bool
+
+    Coerce         :: (Term a, Term b) => Exp a -> Exp Text -> Exp b
+    Eq             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
     Get            :: Exp Table -> Exp Text -> Exp SingleSelection
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
 
-    Add            :: (Any a, Num a) => [Exp a] -> Exp a
-    Multiply       :: (Any a, Num a) => [Exp a] -> Exp a
+    Add            :: (Num a) => [Exp a] -> Exp a
+    Multiply       :: (Num a) => [Exp a] -> Exp a
 
-    ObjectField :: (IsObject a) => Exp a -> Exp Text -> Exp Datum
+    ObjectField :: (IsObject a, IsDatum r) => Exp a -> Exp Text -> Exp r
     -- Get a particular field from an object (or SingleSelection).
 
     ExtractField :: (IsSequence a) => Exp a -> Exp Text -> Exp a
     -- Like 'ObjectField' but over a sequence.
 
-    Take           :: (Any a) => Exp (Sequence a) -> Exp Double -> Exp (Sequence a)
-    Append         :: (Any a) => Exp (Array a) -> Exp a -> Exp (Array a)
-    Prepend        :: (Any a) => Exp (Array a) -> Exp a -> Exp (Array a)
+    Take           :: Exp (Sequence a) -> Exp Double -> Exp (Sequence a)
+    Append         :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
+    Prepend        :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
     IsEmpty        :: (IsSequence a) => Exp a -> Exp Bool
-    Delete         :: (Any a) => Exp a -> Exp Object
+    Delete         :: (Term a) => Exp a -> Exp Object
 
     InsertObject   :: Exp Table -> Object -> Exp Object
     -- Insert a single object into the table.
@@ -430,144 +463,145 @@ data Exp a where
     InsertSequence :: (IsSequence s) => Exp Table -> Exp s -> Exp Object
     -- Insert a sequence into the table.
 
-    Filter         :: (IsSequence s, Any f) => Exp s -> Exp f -> Exp s
+    Filter         :: (IsSequence s, Term a) => Exp s -> (Exp a -> Exp Bool) -> Exp s
     Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
 
-    Var            :: (Any a) => Int -> Exp a
+    Var :: Int -> Exp a
+    -- A 'Var' is used as a placeholder in input to functions.
 
-    Function :: (Any a) => State Context ([Int], Exp a) -> Exp f
+    Function :: (Term a) => State Context ([Int], Exp a) -> Exp f
     -- Creates a function. The action should take care of allocating an
     -- appropriate number of variables from the context. Note that you should
     -- not use this constructor directly. There are 'Lift' instances for all
     -- commonly used functions.
 
-    Call :: (Any f, Any r) => Exp f -> [SomeExp] -> Exp r
+    Call :: (Term f) => Exp f -> [SomeExp] -> Exp r
     -- Call the given function. The function should take the same number of
     -- arguments as there are provided.
 
 
-instance (ToRSON a) => ToRSON (Exp a) where
-    toRSON (Constant datum) =
-        toRSON datum
+instance (Term a) => Term (Exp a) where
+    toTerm (Constant datum) =
+        toTerm datum
 
 
-    toRSON ListDatabases =
+    toTerm ListDatabases =
         simpleTerm 59 []
 
-    toRSON (CreateDatabase name) =
+    toTerm (CreateDatabase name) =
         simpleTerm 57 [SomeExp name]
 
-    toRSON (DropDatabase name) =
+    toTerm (DropDatabase name) =
         simpleTerm 58 [SomeExp name]
 
 
-    toRSON (ListTables db) =
+    toTerm (ListTables db) =
         simpleTerm 62 [SomeExp db]
 
-    toRSON (CreateTable db name) =
+    toTerm (CreateTable db name) =
         simpleTerm 60 [SomeExp db, SomeExp name]
 
-    toRSON (DropTable db name) =
+    toTerm (DropTable db name) =
         simpleTerm 61 [SomeExp db, SomeExp name]
 
 
-    toRSON (ListIndices table) =
+    toTerm (ListIndices table) =
         simpleTerm 77 [SomeExp table]
 
-    toRSON (CreateIndex table name f) =
-        simpleTerm 75 [SomeExp table, SomeExp name, SomeExp f]
+    toTerm (CreateIndex table name f) =
+        simpleTerm 75 [SomeExp table, SomeExp name, SomeExp (lift f)]
 
-    toRSON (DropIndex table name) =
+    toTerm (DropIndex table name) =
         simpleTerm 76 [SomeExp table, SomeExp name]
 
-    toRSON (IndexStatus table indices) =
+    toTerm (IndexStatus table indices) =
         simpleTerm 139 ([SomeExp table] ++ map SomeExp indices)
 
-    toRSON (WaitIndex table indices) =
+    toTerm (WaitIndex table indices) =
         simpleTerm 140 ([SomeExp table] ++ map SomeExp indices)
 
 
-    toRSON (Database name) =
+    toTerm (Database name) =
         simpleTerm 14 [SomeExp name]
 
-    toRSON (Table name) =
+    toTerm (Table name) =
         simpleTerm 15 [SomeExp name]
 
-    toRSON (Filter s f) =
-        simpleTerm 39 [SomeExp s, SomeExp f]
+    toTerm (Filter s f) =
+        simpleTerm 39 [SomeExp s, SomeExp (lift f)]
 
-    toRSON (InsertObject table object) =
+    toTerm (InsertObject table object) =
         termWithOptions 56 [SomeExp table, SomeExp (lift object)] emptyOptions
 
-    toRSON (InsertSequence table s) =
+    toTerm (InsertSequence table s) =
         termWithOptions 56 [SomeExp table, SomeExp s] emptyOptions
 
-    toRSON (Delete selection) =
+    toTerm (Delete selection) =
         simpleTerm 54 [SomeExp selection]
 
-    toRSON (ObjectField object field) =
+    toTerm (ObjectField object field) =
         simpleTerm 31 [SomeExp object, SomeExp field]
 
-    toRSON (ExtractField object field) =
+    toTerm (ExtractField object field) =
         simpleTerm 31 [SomeExp object, SomeExp field]
 
-    toRSON (Coerce value typeName) =
+    toTerm (Coerce value typeName) =
         simpleTerm 51 [SomeExp value, SomeExp typeName]
 
-    toRSON (Add values) =
+    toTerm (Add values) =
         simpleTerm 24 (map SomeExp values)
 
-    toRSON (Multiply values) =
+    toTerm (Multiply values) =
         simpleTerm 26 (map SomeExp values)
 
-    toRSON (Eq a b) =
+    toTerm (Eq a b) =
         simpleTerm 17 [SomeExp a, SomeExp b]
 
-    toRSON (Get table key) =
+    toTerm (Get table key) =
         simpleTerm 16 [SomeExp table, SomeExp key]
 
-    toRSON (GetAll table keys) =
+    toTerm (GetAll table keys) =
         simpleTerm 78 ([SomeExp table] ++ map SomeExp keys)
 
-    toRSON (GetAllIndexed table keys index) =
+    toTerm (GetAllIndexed table keys index) =
         termWithOptions 78 ([SomeExp table] ++ map SomeExp keys)
             (HMS.singleton "index" (String index))
 
-    toRSON (Take s n) =
+    toTerm (Take s n) =
         simpleTerm 71 [SomeExp s, SomeExp n]
 
-    toRSON (Append array value) =
+    toTerm (Append array value) =
         simpleTerm 29 [SomeExp array, SomeExp value]
 
-    toRSON (Prepend array value) =
+    toTerm (Prepend array value) =
         simpleTerm 80 [SomeExp array, SomeExp value]
 
-    toRSON (IsEmpty s) =
+    toTerm (IsEmpty s) =
         simpleTerm 86 [SomeExp s]
 
-    toRSON (Keys a) =
+    toTerm (Keys a) =
         simpleTerm 94 [SomeExp a]
 
-    toRSON (Var a) =
+    toTerm (Var a) =
         simpleTerm 10 [SomeExp $ lift $ (fromIntegral a :: Double)]
 
-    toRSON (Function a) = do
+    toTerm (Function a) = do
         (vars, f) <- a
         simpleTerm 69 [SomeExp $ Constant $ V.fromList $ map (Number . fromIntegral) vars, SomeExp f]
 
-    toRSON (Call f args) =
+    toTerm (Call f args) =
         simpleTerm 64 ([SomeExp f] ++ args)
 
 
 simpleTerm :: Int -> [SomeExp] -> State Context A.Value
 simpleTerm termType args = do
-    args' <- mapM toRSON args
+    args' <- mapM toTerm args
     return $ A.Array $ V.fromList [toJSON termType, toJSON args']
 
 termWithOptions :: Int -> [SomeExp] -> Object -> State Context A.Value
 termWithOptions termType args options = do
-    args'    <- mapM toRSON args
-    options' <- toRSON options
+    args'    <- mapM toTerm args
+    options' <- toTerm options
 
     return $ A.Array $ V.fromList [toJSON termType, toJSON args', toJSON options']
 
@@ -575,10 +609,10 @@ termWithOptions termType args options = do
 -- | Convenience to for automatically converting a 'Text' to a constant
 -- expression.
 instance IsString (Exp Text) where
-   fromString = lift . fromString
+    fromString = lift . (fromString :: String -> Text)
 
 
-instance (IsDatum a, Any a, Num a) => Num (Exp a) where
+instance Num (Exp Double) where
     fromInteger = Constant . fromInteger
 
     a + b = Add [a, b]
@@ -595,35 +629,50 @@ instance (IsDatum a, Any a, Num a) => Num (Exp a) where
 -- types of functions (unary and binary).
 
 class Lift c e where
-    lift :: e -> c e
+    -- | Type-level function which simplifies the type of @e@ once it is lifted
+    -- into @c@. This is used for functions where we strip the signature so
+    -- that we don't have to define dummy 'Term' instances for those.
+    type Simplified e
+
+    lift :: e -> c (Simplified e)
+
 
 instance Lift Exp Bool where
+    type Simplified Bool = Bool
     lift = Constant
 
 instance Lift Exp Double where
+    type Simplified Double = Double
     lift = Constant
 
 instance Lift Exp Text where
+    type Simplified Text = Text
     lift = Constant
 
 instance Lift Exp Object where
+    type Simplified Object = Object
     lift = Constant
 
 instance Lift Exp Datum where
+    type Simplified Datum = Datum
     lift = Constant
 
 instance Lift Exp ZonedTime where
+    type Simplified ZonedTime = ZonedTime
     lift = Constant
 
 instance Lift Exp (Array Datum) where
+    type Simplified (Array Datum) = (Array Datum)
     lift = Constant
 
-instance (Any a, Any b) => Lift Exp (Exp a -> Exp b) where
+instance (Term r) => Lift Exp (Exp a -> Exp r) where
+    type Simplified (Exp a -> Exp r) = Exp r
     lift f = Function $ do
         v1 <- newVar
         return $ ([v1], f (Var v1))
 
-instance (Any a, Any b, Any c) => Lift Exp (Exp a -> Exp b -> Exp c) where
+instance (Term r) => Lift Exp (Exp a -> Exp b -> Exp r) where
+    type Simplified (Exp a -> Exp b -> Exp r) = Exp r
     lift f = Function $ do
         v1 <- newVar
         v2 <- newVar
@@ -636,19 +685,19 @@ instance (Any a, Any b, Any c) => Lift Exp (Exp a -> Exp b -> Exp c) where
 -- used instead of the 'Call' constructor because they provide type safety.
 
 -- | Call an unary function with the given argument.
-call1 :: (Any a, Any r)
-      => Exp (Exp a -> Exp r)
+call1 :: (Term a, Term r)
+      => (Exp a -> Exp r)
       -> Exp a
       -> Exp r
-call1 f a = Call f [SomeExp a]
+call1 f a = Call (lift f) [SomeExp a]
 
 
 -- | Call an binary function with the given arguments.
-call2 :: (Any a, Any b, Any r)
-      => Exp (Exp a -> Exp b -> Exp r)
+call2 :: (Term a, Term b, Term r)
+      => (Exp a -> Exp b -> Exp r)
       -> Exp a -> Exp b
       -> Exp r
-call2 f a b = Call f [SomeExp a, SomeExp b]
+call2 f a b = Call (lift f) [SomeExp a, SomeExp b]
 
 
 emptyOptions :: Object
@@ -661,27 +710,10 @@ emptyOptions = HMS.empty
 -- arguments can, and often have, different types).
 
 data SomeExp where
-     SomeExp :: (ToRSON a, Any a) => Exp a -> SomeExp
+     SomeExp :: (Term a) => Exp a -> SomeExp
 
-instance ToRSON SomeExp where
-    toRSON (SomeExp e) = toRSON e
-
-
-
-------------------------------------------------------------------------------
--- Query
-
-data Query a = Start (Exp a) Object
-
-instance (ToRSON a) => ToRSON (Query a) where
-    toRSON (Start term options) = do
-        term'    <- toRSON term
-        options' <- toRSON options
-        return $ A.Array $ V.fromList
-            [ A.Number 1
-            , term'
-            , toJSON $ options'
-            ]
+instance Term SomeExp where
+    toTerm (SomeExp e) = toTerm e
 
 
 

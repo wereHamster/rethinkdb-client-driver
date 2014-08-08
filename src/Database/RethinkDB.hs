@@ -8,7 +8,8 @@ module Database.RethinkDB
 
     , Error(..)
 
-    , Exp(..), SomeExp(..)
+    , Term, Exp(..), SomeExp(..)
+    , FromRSON(..), ToRSON(..)
     , Array, Object, Datum(..)
     , Sequence
     , Table, Database, SingleSelection
@@ -18,7 +19,7 @@ module Database.RethinkDB
     , lift
     , call1, call2
 
-    , Any, IsDatum, IsObject, IsSequence
+    , IsDatum, IsObject, IsSequence
     ) where
 
 
@@ -71,7 +72,7 @@ newHandle host port mbAuth = do
 -- | Start a new query and wait for its (first) result. If the result is an
 -- single value ('Datum'), then three will be no further results. If it is
 -- a sequence, then you must consume results until the sequence ends.
-run :: (Any a, FromResponse (Result a))
+run :: (Term a, FromResponse (Result a))
     => Handle -> Exp a -> IO (Res a)
 run handle expr = do
     _token <- start handle expr
@@ -116,16 +117,25 @@ collect handle s@(Partial token x) = do
 
 -- | Start a new query. Returns the 'Token' which can be used to track its
 -- progress.
-start :: (Any a) => Handle -> Exp a -> IO Token
+start :: (Term a) => Handle -> a -> IO Token
 start handle term = do
     token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
-    sendMessage (hSocket handle) (queryMessage token (Start term emptyOptions))
+    sendMessage (hSocket handle) (queryMessage token msg)
     return token
 
+  where
+    msg = compileTerm $ do
+        term'    <- toTerm term
+        options' <- toTerm emptyOptions
+        return $ A.Array $ V.fromList
+            [ A.Number 1
+            , term'
+            , A.toJSON $ options'
+            ]
 
 
-singleElementArray :: Int -> Datum
-singleElementArray x = Array $ V.singleton $ Number $ fromIntegral x
+singleElementArray :: Int -> A.Value
+singleElementArray x = A.Array $ V.singleton $ A.Number $ fromIntegral x
 
 -- | Let the server know that it can send the next response corresponding to
 -- the given token.

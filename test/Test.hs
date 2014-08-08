@@ -60,7 +60,7 @@ main = do
 
 
 expectSuccess
-    :: (Any a, Eq (Result a), FromResponse (Result a), Show (Result a))
+    :: (Term a, Eq (Result a), FromResponse (Result a), Show (Result a))
     => Handle -> Exp a -> Result a -> IO Bool
 expectSuccess h query value = do
     res <- run h query
@@ -114,15 +114,15 @@ spec h = do
 
     describe "function calls" $ do
         it "Add" $ property $ \(a :: Double, b :: Double) -> monadic $ do
-            res <- run h $ call2 (lift (+)) (lift a) (lift b)
+            res <- run h $ call2 (+) (lift a) (lift b)
             return $ res == (Right $ a + b)
 
-            res <- run h $ call1 (lift (1+)) (lift a)
+            res <- run h $ call1 (1+) (lift a)
             return $ res == (Right $ a + 1)
 
         it "Multiply" $ property $ \(a :: Double, b :: Double) -> monadic $ do
-            res <- run h $ call2 (lift (*)) (lift a) (lift b)
+            res <- run h $ call2 (*) (lift a) (lift b)
             return $ res == (Right $ a * b)
 
-            res <- run h $ call1 (lift (3*)) (lift a)
+            res <- run h $ call1 (3*) (lift a)
             return $ res == (Right $ a * 3)

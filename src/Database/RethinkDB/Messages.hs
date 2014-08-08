@@ -8,8 +8,8 @@ import           Data.Text            (Text)
 import qualified Data.Text            as T
 import qualified Data.Text.Encoding   as T
 
-import           Data.Aeson           as A hiding (Result)
-import           Data.Aeson.Types     as A hiding (Result)
+import           Data.Aeson           as A hiding (Result, Object)
+import           Data.Aeson.Types     as A hiding (Result, Object)
 
 import           Data.ByteString.Lazy (toStrict)
 import qualified Data.ByteString.Lazy as BS
@@ -73,13 +73,13 @@ handshakeReplyParser = do
     (T.decodeUtf8 . toStrict) <$> getLazyByteStringNul
 
 
-queryMessage :: (ToRSON a) => Token -> a -> BS.ByteString
+queryMessage :: Token -> A.Value -> BS.ByteString
 queryMessage token msg = runPut $ do
     putWord64host     token
     putWord32le       (fromIntegral $ BS.length buf)
     putLazyByteString buf
   where
-    buf = A.encode $ toQuery msg
+    buf = A.encode msg
 
 
 responseMessageParser :: Get Response
