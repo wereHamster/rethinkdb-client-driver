@@ -320,6 +320,30 @@ eqTime = (==) `on` zonedTimeToUTC
 
 
 ------------------------------------------------------------------------------
+-- UTCTime
+
+instance IsDatum  UTCTime
+instance IsObject UTCTime
+
+instance FromResponse UTCTime where
+    parseResponse = responseAtomParser
+
+instance ToRSON UTCTime where
+    toRSON = toRSON . utcToZonedTime utc
+
+instance FromRSON UTCTime where
+    parseRSON v = zonedTimeToUTC <$> parseRSON v
+
+instance Term UTCTime where
+    toTerm = return . toRSON
+
+instance Lift Exp UTCTime where
+    type Simplified UTCTime = ZonedTime
+    lift = Constant . utcToZonedTime utc
+
+
+
+------------------------------------------------------------------------------
 -- | Tables are something you can select objects from.
 --
 -- This type is not exported, and merely serves as a sort of phantom type. On
