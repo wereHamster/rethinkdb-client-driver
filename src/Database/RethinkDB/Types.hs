@@ -42,6 +42,9 @@ import           GHC.Generics
 class Term a where
     toTerm :: a -> State Context A.Value
 
+instance Term A.Value where
+    toTerm = return
+
 
 
 ------------------------------------------------------------------------------
@@ -361,6 +364,32 @@ instance Term Database where
 
 
 ------------------------------------------------------------------------------
+-- | Bounds are used in 'Between'.
+
+data Bound = Open !Datum | Closed !Datum
+
+boundDatum :: Bound -> Datum
+boundDatum (Open   x) = x
+boundDatum (Closed x) = x
+
+boundString :: Bound -> Text
+boundString (Open   _) = "open"
+boundString (Closed _) = "closed"
+
+
+
+------------------------------------------------------------------------------
+-- | Used in 'OrderBy'.
+
+data Order = Ascending !Text | Descending !Text
+
+instance Term Order where
+    toTerm (Ascending  key) = simpleTerm 73 [SomeExp $ Constant $ String key]
+    toTerm (Descending key) = simpleTerm 74 [SomeExp $ Constant $ String key]
+
+
+
+------------------------------------------------------------------------------
 -- | Sequences are a bounded list of items. The server may split the sequence
 -- into multiple chunks when sending it to the client. When the response is
 -- a partial sequence, the client may request additional chunks until it gets
@@ -435,6 +464,8 @@ data Exp a where
 
     Coerce         :: (Term a, Term b) => Exp a -> Exp Text -> Exp b
     Eq             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
+    Ne             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
+    Match          :: Exp Text -> Exp Text -> Exp Datum
     Get            :: Exp Table -> Exp Text -> Exp SingleSelection
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
@@ -442,13 +473,19 @@ data Exp a where
     Add            :: (Num a) => [Exp a] -> Exp a
     Multiply       :: (Num a) => [Exp a] -> Exp a
 
+    All :: [Exp Bool] -> Exp Bool
+    -- True if all the elements in the input are True.
+
+    Any :: [Exp Bool] -> Exp Bool
+    -- True if any element in the input is True.
+
     ObjectField :: (IsObject a, IsDatum r) => Exp a -> Exp Text -> Exp r
     -- Get a particular field from an object (or SingleSelection).
 
     ExtractField :: (IsSequence a) => Exp a -> Exp Text -> Exp a
     -- Like 'ObjectField' but over a sequence.
 
-    Take           :: Exp (Sequence a) -> Exp Double -> Exp (Sequence a)
+    Take           :: (IsSequence s) => Exp Double -> Exp s -> Exp s
     Append         :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
     Prepend        :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
     IsEmpty        :: (IsSequence a) => Exp a -> Exp Bool
@@ -460,8 +497,19 @@ data Exp a where
     InsertSequence :: (IsSequence s) => Exp Table -> Exp s -> Exp Object
     -- Insert a sequence into the table.
 
-    Filter         :: (IsSequence s, Term a) => Exp s -> (Exp a -> Exp Bool) -> Exp s
-    Keys           :: (IsObject a) => Exp a -> Exp (Array Text)
+    Filter :: (IsSequence s, Term a) => (Exp a -> Exp Bool) -> Exp s -> Exp s
+    Map :: (IsSequence s, Term a, Term b) => (Exp a -> Exp b) -> Exp s -> Exp s
+
+    Between :: (IsSequence s) => Exp s -> (Bound, Bound) -> Exp s
+    -- Select all elements whose primary key is between the two bounds.
+
+    BetweenIndexed :: (IsSequence s) => Exp s -> (Bound, Bound) -> Text -> Exp s
+    -- Select all elements whose secondary index is between the two bounds.
+
+    OrderBy :: (IsSequence s) => [Order] -> Exp s -> Exp s
+    -- Order a sequence based on the given order specificiation.
+
+    Keys :: (IsObject a) => Exp a -> Exp (Array Text)
 
     Var :: Int -> Exp a
     -- A 'Var' is used as a placeholder in input to functions.
@@ -524,8 +572,31 @@ instance (Term a) => Term (Exp a) where
     toTerm (Table name) =
         simpleTerm 15 [SomeExp name]
 
-    toTerm (Filter s f) =
+    toTerm (Filter f s) =
         simpleTerm 39 [SomeExp s, SomeExp (lift f)]
+
+    toTerm (Map f s) =
+        simpleTerm 38 [SomeExp s, SomeExp (lift f)]
+
+    toTerm (Between s (l, u)) =
+        termWithOptions 36 [SomeExp s, SomeExp $ lift (boundDatum l), SomeExp $ lift (boundDatum u)] $
+            HMS.fromList
+                [ ("left_bound",  String (boundString l))
+                , ("right_bound", String (boundString u))
+                ]
+
+    toTerm (BetweenIndexed s (l, u) index) =
+        termWithOptions 36 [SomeExp s, SomeExp $ lift (boundDatum l), SomeExp $ lift (boundDatum u)] $
+            HMS.fromList
+                [ ("left_bound",  String (boundString l))
+                , ("right_bound", String (boundString u))
+                , ("index",       String index)
+                ]
+
+    toTerm (OrderBy spec s) = do
+        s'    <- toTerm s
+        spec' <- mapM toTerm spec
+        simpleTerm2 41 ([s'] ++ spec')
 
     toTerm (InsertObject table object) =
         termWithOptions 56 [SomeExp table, SomeExp (lift object)] emptyOptions
@@ -551,8 +622,20 @@ instance (Term a) => Term (Exp a) where
     toTerm (Multiply values) =
         simpleTerm 26 (map SomeExp values)
 
+    toTerm (All values) =
+        simpleTerm 67 (map SomeExp values)
+
+    toTerm (Any values) =
+        simpleTerm 66 (map SomeExp values)
+
     toTerm (Eq a b) =
         simpleTerm 17 [SomeExp a, SomeExp b]
+
+    toTerm (Ne a b) =
+        simpleTerm 18 [SomeExp a, SomeExp b]
+
+    toTerm (Match a b) =
+        simpleTerm 97 [SomeExp a, SomeExp b]
 
     toTerm (Get table key) =
         simpleTerm 16 [SomeExp table, SomeExp key]
@@ -564,7 +647,7 @@ instance (Term a) => Term (Exp a) where
         termWithOptions 78 ([SomeExp table] ++ map SomeExp keys)
             (HMS.singleton "index" (String index))
 
-    toTerm (Take s n) =
+    toTerm (Take n s) =
         simpleTerm 71 [SomeExp s, SomeExp n]
 
     toTerm (Append array value) =
@@ -592,6 +675,11 @@ instance (Term a) => Term (Exp a) where
 
 simpleTerm :: Int -> [SomeExp] -> State Context A.Value
 simpleTerm termType args = do
+    args' <- mapM toTerm args
+    return $ A.Array $ V.fromList [toJSON termType, toJSON args']
+
+simpleTerm2 :: (Term a) => Int -> [a] -> State Context A.Value
+simpleTerm2 termType args = do
     args' <- mapM toTerm args
     return $ A.Array $ V.fromList [toJSON termType, toJSON args']
 

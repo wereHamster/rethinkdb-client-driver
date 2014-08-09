@@ -93,9 +93,22 @@ spec h = do
             let xs = 0 : xs0
             expectSuccess h (Add $ map lift xs) (sum xs)
 
+        it "All" $ property $ \(xs0 :: [Bool]) -> monadic $ do
+            let xs = True : xs0
+            expectSuccess h (All $ map lift xs) (and xs)
+
+        it "Any" $ property $ \(xs0 :: [Bool]) -> monadic $ do
+            let xs = True : xs0
+            expectSuccess h (Any $ map lift xs) (or xs)
+
         it "Eq" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
             expectSuccess h (Eq (lift a) (lift b)) (a == b)
-            expectSuccess h (Eq (lift a) (lift a)) (a == a)
+
+        it "Ne" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
+            expectSuccess h (Ne (lift a) (lift b)) (a /= b)
+
+        it "Match" $ property $ \() -> monadic $ do
+            expectSuccess h (Match "foobar" "^f(.)$") Null
 
         it "Append" $ property $ \(xs :: Array Datum, v :: Datum) -> monadic $ do
             expectSuccess h (Append (lift xs) (lift v)) (V.snoc xs v)
