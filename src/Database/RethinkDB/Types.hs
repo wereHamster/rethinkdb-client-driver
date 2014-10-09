@@ -145,6 +145,17 @@ instance FromResponse Datum where
     parseResponse = responseAtomParser
 
 
+instance FromResponse (Maybe Datum) where
+    parseResponse r = case (responseType r, V.toList (responseResult r)) of
+        (SuccessAtom, [a]) -> do
+            res0 <- parseRSON a
+            case res0 of
+                Null -> return Nothing
+                res  -> return $ Just res
+        _                  -> fail $ "responseAtomParser: Not a single-element vector " ++ show (responseResult r)
+
+
+
 
 ------------------------------------------------------------------------------
 -- | For a boolean type, we're reusing the standard Haskell 'Bool' type.
