@@ -86,9 +86,9 @@ responseMessageParser :: Get Response
 responseMessageParser = do
     token <- getWord64host
     len   <- getWord32le
-    buf   <- getLazyByteString (fromIntegral len)
+    buf   <- getByteString (fromIntegral len)
 
-    let (Just v) = A.decode buf :: (Maybe Value)
+    let (Just v) = A.decodeStrict buf :: (Maybe Value)
     --trace (show v) $ return ()
     case A.parseEither (responseParser token) v of
         Left e -> do
