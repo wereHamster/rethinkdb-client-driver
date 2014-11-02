@@ -88,13 +88,9 @@ responseMessageParser = do
     len   <- getWord32le
     buf   <- getByteString (fromIntegral len)
 
-    case A.decodeStrict buf of
-        Nothing -> fail "responseMessageParser: Response is not a JSON value"
-        Just value -> do
-            --trace (show v) $ return ()
+    case A.eitherDecodeStrict buf of
+        Left e -> fail $ "responseMessageParser: response is not a JSON value (" ++ e ++ ")"
+        Right value -> do
             case A.parseEither (responseParser token) value of
-                Left e -> do
-                    --trace ("Response parser " ++ e) $ return ()
-                    fail $ "Response: " ++ e
-                Right x  -> return x
-
+                Left e  -> fail $ "responseMessageParser: could not parse response (" ++ e ++ ")"
+                Right x -> return x
