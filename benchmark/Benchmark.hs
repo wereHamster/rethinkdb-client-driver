@@ -28,7 +28,8 @@ main = do
     let test name = bench name . nfIO . void . run h
 
     defaultMain
-        [ test "point-get" $ Get table "id"
+        [ test "roundtrip" $ lift (0 :: Double)
+        , test "point-get" $ Get table "id"
         ]
 
 
