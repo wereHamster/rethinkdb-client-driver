@@ -740,6 +740,7 @@ instance Num (Exp Double) where
 
     abs _    = error "Num (Exp a): abs not implemented"
     signum _ = error "Num (Exp a): signum not implemented"
+    negate _ = error "Num (Exp a): negate not implemented"
 
 
 
