@@ -4,7 +4,7 @@
 module Database.RethinkDB
     ( Handle
     , defaultPort, newHandle
-    , run, nextChunk, collect
+    , run, nextChunk, collect, stop, wait
 
     , Error(..)
 
@@ -103,7 +103,7 @@ mkError r e = return $ case V.toList (responseResult r) of
 collect :: (FromResponse (Sequence a))
         => Handle -> Sequence a -> IO (Either Error (V.Vector a))
 collect _        (Done      x) = return $ Right x
-collect handle s@(Partial token x) = do
+collect handle s@(Partial _ x) = do
     chunk <- nextChunk handle s
     case chunk of
         Left e -> return $ Left e

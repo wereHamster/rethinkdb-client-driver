@@ -89,6 +89,9 @@ newVar = do
 ------------------------------------------------------------------------------
 -- | A sumtype covering all the primitive types which can appear in queries
 -- or responses.
+--
+-- It is similar to the aeson 'Value' type, except that RethinkDB has a few
+-- more types (like 'Time'), which have a special encoding in JSON.
 
 data Datum
     = Null
