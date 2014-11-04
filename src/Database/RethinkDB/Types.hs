@@ -364,9 +364,6 @@ data Table = MkTable
 
 instance IsSequence Table
 
-instance ToRSON Table where
-    toRSON = error "toRSON Table: Server-only type"
-
 instance Term Table where
     toTerm = error "toTerm Table: Server-only type"
 
@@ -444,9 +441,6 @@ instance Show (Sequence a) where
 
 instance (FromRSON a) => FromResponse (Sequence a) where
     parseResponse = responseSequenceParser
-
-instance ToRSON (Sequence a) where
-    toRSON = error "toRSON Sequence: Server-only type"
 
 instance Term (Sequence a) where
     toTerm = error "toTerm Sequence: Server-only type"
