@@ -56,10 +56,10 @@ class FromRSON a where
     parseRSON :: A.Value -> Parser a
 
 ------------------------------------------------------------------------------
--- | See 'FromRSON'.
+-- | Types which can be converted to a 'Datum'.
 
-class ToRSON a where
-    toRSON :: a -> A.Value
+class ToDatum a where
+    toDatum :: a -> Datum
 
 
 
@@ -121,15 +121,6 @@ instance Eq Datum where
     (Time   x) == (Time   y) = x `eqTime` y
     _          == _          = False
 
-instance ToRSON Datum where
-    toRSON (Null    ) = A.Null
-    toRSON (Bool   x) = toRSON x
-    toRSON (Number x) = toRSON x
-    toRSON (String x) = toRSON x
-    toRSON (Array  x) = toRSON x
-    toRSON (Object x) = toRSON x
-    toRSON (Time   x) = toRSON x
-
 instance FromRSON Datum where
     parseRSON   (A.Null    ) = pure Null
     parseRSON   (A.Bool   x) = pure $ Bool x
@@ -142,7 +133,16 @@ instance FromRSON Datum where
         return $ Object $ HMS.fromList items
 
 instance Term Datum where
-    toTerm = return . toRSON
+    toTerm (Null    ) = return $ A.Null
+    toTerm (Bool   x) = toTerm x
+    toTerm (Number x) = toTerm x
+    toTerm (String x) = toTerm x
+    toTerm (Array  x) = toTerm x
+    toTerm (Object x) = toTerm x
+    toTerm (Time   x) = toTerm x
+
+instance ToDatum Datum where
+    toDatum = id
 
 instance FromResponse Datum where
     parseResponse = responseAtomParser
@@ -171,11 +171,11 @@ instance FromResponse Bool where
 instance FromRSON Bool where
     parseRSON = parseJSON
 
-instance ToRSON Bool where
-    toRSON = toJSON
-
 instance Term Bool where
-    toTerm = return . toRSON
+    toTerm = return . A.Bool
+
+instance ToDatum Bool where
+    toDatum = Bool
 
 
 
@@ -191,11 +191,11 @@ instance FromResponse Double where
 instance FromRSON Double where
     parseRSON = parseJSON
 
-instance ToRSON Double where
-    toRSON = toJSON
-
 instance Term Double where
-    toTerm = return . toRSON
+    toTerm = return . toJSON
+
+instance ToDatum Double where
+    toDatum = Number
 
 
 
@@ -210,11 +210,11 @@ instance FromResponse Text where
 instance FromRSON Text where
     parseRSON = parseJSON
 
-instance ToRSON Text where
-    toRSON = toJSON
-
 instance Term Text where
-    toTerm = return . toRSON
+    toTerm = return . toJSON
+
+instance ToDatum Text where
+    toDatum = String
 
 
 
@@ -229,14 +229,6 @@ instance (IsDatum a) => IsSequence (Array a)
 instance (FromRSON a) => FromResponse (Array a) where
     parseResponse = responseAtomParser
 
--- Arrays are encoded as a term MAKE_ARRAY (2).
-instance (ToRSON a) => ToRSON (Array a) where
-    toRSON v = A.Array $ V.fromList $
-        [ A.Number 2
-        , toJSON $ map toRSON (V.toList v)
-        , toJSON $ toRSON emptyOptions
-        ]
-
 instance (FromRSON a) => FromRSON (Array a) where
     parseRSON (A.Array v) = V.mapM parseRSON v
     parseRSON _           = fail "Array"
@@ -250,6 +242,9 @@ instance (Term a) => Term (Array a) where
             , toJSON vals
             , toJSON $ options
             ]
+
+instance (ToDatum a) => ToDatum (Array a) where
+    toDatum = Array . V.map toDatum
 
 
 
@@ -277,11 +272,13 @@ instance FromRSON Object where
 
     parseRSON _            = fail "Object"
 
-instance ToRSON Object where
-    toRSON = A.Object . HMS.map toRSON
-
 instance Term Object where
-    toTerm = return . toRSON
+    toTerm x = do
+        items <- mapM (\(k, v) -> (,) <$> pure k <*> toTerm v) $ HMS.toList x
+        return $ A.Object $ HMS.fromList $ items
+
+instance ToDatum Object where
+    toDatum = Object
 
 
 
@@ -296,13 +293,6 @@ instance IsObject ZonedTime
 
 instance FromResponse ZonedTime where
     parseResponse = responseAtomParser
-
-instance ToRSON ZonedTime where
-    toRSON t = A.object
-        [ "$reql_type$" .= ("TIME" :: Text)
-        , "timezone"    .= (timeZoneOffsetString $ zonedTimeZone t)
-        , "epoch_time"  .= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC t :: Double)
-        ]
 
 instance FromRSON ZonedTime where
     parseRSON (A.Object o) = do
@@ -322,7 +312,15 @@ instance FromRSON ZonedTime where
     parseRSON _           = fail "Time"
 
 instance Term ZonedTime where
-    toTerm = return . toRSON
+    toTerm x = return $ A.object
+        [ "$reql_type$" .= ("TIME" :: Text)
+        , "timezone"    .= (timeZoneOffsetString $ zonedTimeZone x)
+        , "epoch_time"  .= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC x :: Double)
+        ]
+
+
+instance ToDatum ZonedTime where
+    toDatum = Time
 
 
 
@@ -342,14 +340,11 @@ instance IsObject UTCTime
 instance FromResponse UTCTime where
     parseResponse = responseAtomParser
 
-instance ToRSON UTCTime where
-    toRSON = toRSON . utcToZonedTime utc
-
 instance FromRSON UTCTime where
     parseRSON v = zonedTimeToUTC <$> parseRSON v
 
 instance Term UTCTime where
-    toTerm = return . toRSON
+    toTerm = toTerm . utcToZonedTime utc
 
 instance Lift Exp UTCTime where
     type Simplified UTCTime = ZonedTime
@@ -455,7 +450,7 @@ instance IsSequence (Sequence a)
 ------------------------------------------------------------------------------
 
 data Exp a where
-    Constant :: (ToRSON a) => a -> Exp a
+    Constant :: (ToDatum a) => a -> Exp a
     -- Any object which can be converted to RSON can be treated as a constant.
     -- Furthermore, many basic Haskell types have a 'Lift' instance which turns
     -- their values into constants.
@@ -502,8 +497,8 @@ data Exp a where
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
 
-    Add            :: (Num a) => [Exp a] -> Exp a
-    Multiply       :: (Num a) => [Exp a] -> Exp a
+    Add            :: (Term a, Num a) => [Exp a] -> Exp a
+    Multiply       :: (Term a, Num a) => [Exp a] -> Exp a
 
     All :: [Exp Bool] -> Exp Bool
     -- True if all the elements in the input are True.
@@ -557,9 +552,9 @@ data Exp a where
     -- arguments as there are provided.
 
 
-instance (Term a) => Term (Exp a) where
+instance Term (Exp a) where
     toTerm (Constant datum) =
-        toTerm datum
+        toTerm $ toDatum datum
 
 
     toTerm ListDatabases =

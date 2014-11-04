@@ -9,7 +9,7 @@ module Database.RethinkDB
     , Error(..)
 
     , Term, Exp(..), SomeExp(..)
-    , FromRSON(..), ToRSON(..)
+    , FromRSON(..), ToDatum(..)
     , Array, Object, Datum(..), Bound(..), Order(..)
     , Sequence
     , Table, Database, SingleSelection
