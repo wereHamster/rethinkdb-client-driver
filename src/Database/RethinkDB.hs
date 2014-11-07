@@ -8,14 +8,17 @@ module Database.RethinkDB
 
     , Error(..)
 
+      -- * The Datum type
+    , Datum(..), Array, Object, ToDatum(..), FromDatum(..)
+    , (.=), (.:), (.:?), object
+
+      -- The Exp type
     , Exp(..), SomeExp(..)
-    , ToDatum(..), FromDatum(..)
-    , Array, Object, Datum(..), Bound(..), Order(..)
+    , Bound(..), Order(..)
     , Sequence
     , Table, Database, SingleSelection
     , Res, Result, FromResponse
     , emptyOptions
-    , eqTime
     , lift
     , call1, call2
 
@@ -35,6 +38,7 @@ import           Network.Socket   (Socket)
 import           Data.IORef
 
 import           Database.RethinkDB.Types
+import           Database.RethinkDB.Types.Datum
 import           Database.RethinkDB.Messages
 
 

@@ -50,6 +50,7 @@ library
     exposed-modules   : Database.RethinkDB
     other-modules     : Database.RethinkDB.Messages
                       , Database.RethinkDB.Types
+                      , Database.RethinkDB.Types.Datum
 
     ghc-options       : -Wall
 

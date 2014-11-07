@@ -10,27 +10,23 @@ module Database.RethinkDB.Types where
 
 
 import           Control.Applicative
-import           Control.Monad
 import           Control.Monad.State (State, gets, modify, evalState)
 
-import           Data.Function
 import           Data.Word
 import           Data.String
 import           Data.Text           (Text)
 import           Data.Time
-import           System.Locale       (defaultTimeLocale)
 import           Data.Time.Clock.POSIX
 
-import           Data.Aeson          ((.:), (.=), FromJSON, parseJSON, toJSON)
+import           Data.Aeson          (FromJSON, parseJSON, toJSON)
 import           Data.Aeson.Types    (Parser, Value)
 import qualified Data.Aeson          as A
 
 import           Data.Vector         (Vector)
 import qualified Data.Vector         as V
-import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMS
 
-import           GHC.Generics
+import           Database.RethinkDB.Types.Datum
 
 
 
@@ -44,17 +40,6 @@ class Term a where
 
 instance Term A.Value where
     toTerm = return
-
-
-
-------------------------------------------------------------------------------
--- | Types which can be converted to a 'Datum'.
-
-class ToDatum a where
-    toDatum :: a -> Datum
-
-class FromDatum a where
-    parseDatum :: Datum -> Parser a
 
 
 
@@ -81,40 +66,9 @@ newVar = do
 
 
 
-------------------------------------------------------------------------------
--- | A sumtype covering all the primitive types which can appear in queries
--- or responses.
---
--- It is similar to the aeson 'Value' type, except that RethinkDB has a few
--- more types (like 'Time'), which have a special encoding in JSON.
-
-data Datum
-    = Null
-    | Bool   !Bool
-    | Number !Double
-    | String !Text
-    | Array  !(Array Datum)
-    | Object !Object
-    | Time   !ZonedTime
-    deriving (Show, Generic)
-
-
 class IsDatum a
 
-
 instance IsDatum Datum
-
--- | We can't automatically derive 'Eq' because 'ZonedTime' does not have an
--- instance of 'Eq'. See the 'eqTime' function for why we can compare times.
-instance Eq Datum where
-    (Null    ) == (Null    ) = True
-    (Bool   x) == (Bool   y) = x == y
-    (Number x) == (Number y) = x == y
-    (String x) == (String y) = x == y
-    (Array  x) == (Array  y) = x == y
-    (Object x) == (Object y) = x == y
-    (Time   x) == (Time   y) = x `eqTime` y
-    _          == _          = False
 
 instance Term Datum where
     toTerm (Null    ) = return $ A.Null
@@ -125,35 +79,17 @@ instance Term Datum where
     toTerm (Object x) = toTerm x
     toTerm (Time   x) = toTerm x
 
-instance ToDatum Datum where
-    toDatum = id
-
-instance FromDatum Datum where
-    parseDatum = return
-
 instance FromResponse Datum where
     parseResponse = responseAtomParser
 
 instance FromResponse (Maybe Datum) where
     parseResponse r = case (responseType r, V.toList (responseResult r)) of
         (SuccessAtom, [a]) -> do
-            res0 <- parseResult a
+            res0 <- parseWire a
             case res0 of
                 Null -> return Nothing
                 res  -> return $ Just res
         _                  -> fail $ "responseAtomParser: Not a single-element vector " ++ show (responseResult r)
-
-
-parseResult :: A.Value -> Parser Datum
-parseResult (A.Null    ) = pure Null
-parseResult (A.Bool   x) = pure $ Bool x
-parseResult (A.Number x) = pure $ Number (realToFrac x)
-parseResult (A.String x) = pure $ String x
-parseResult (A.Array  x) = Array <$> V.mapM parseResult x
-parseResult (A.Object x) = (Time <$> zonedTimeParser x) <|> do
-    -- HashMap does not provide a mapM, what a shame :(
-    items <- mapM (\(k, v) -> (,) <$> pure k <*> parseResult v) $ HMS.toList x
-    return $ Object $ HMS.fromList items
 
 
 
@@ -167,13 +103,6 @@ instance FromResponse Bool where
 
 instance Term Bool where
     toTerm = return . A.Bool
-
-instance ToDatum Bool where
-    toDatum = Bool
-
-instance FromDatum Bool where
-    parseDatum (Bool x) = return x
-    parseDatum _        = fail "Bool"
 
 
 
@@ -189,13 +118,6 @@ instance FromResponse Double where
 instance Term Double where
     toTerm = return . toJSON
 
-instance ToDatum Double where
-    toDatum = Number
-
-instance FromDatum Double where
-    parseDatum (Number x) = return x
-    parseDatum _          = fail "Double"
-
 
 
 ------------------------------------------------------------------------------
@@ -209,19 +131,10 @@ instance FromResponse Text where
 instance Term Text where
     toTerm = return . toJSON
 
-instance ToDatum Text where
-    toDatum = String
-
-instance FromDatum Text where
-    parseDatum (String x) = return x
-    parseDatum _          = fail "Text"
-
 
 
 ------------------------------------------------------------------------------
 -- | Arrays are vectors of 'Datum'.
-
-type Array a = Vector a
 
 instance (IsDatum a) => IsDatum    (Array a)
 instance (IsDatum a) => IsSequence (Array a)
@@ -239,21 +152,11 @@ instance (Term a) => Term (Array a) where
             , toJSON $ options
             ]
 
-instance (ToDatum a) => ToDatum (Array a) where
-    toDatum = Array . V.map toDatum
-
-instance (FromDatum a) => FromDatum (Array a) where
-    parseDatum (Array v) = V.mapM parseDatum v
-    parseDatum _         = fail "Array"
-
 
 
 ------------------------------------------------------------------------------
 -- | Objects are maps from 'Text' to 'Datum'. Like 'Aeson', we're using
 -- 'HashMap'.
-
-type Object = HashMap Text Datum
-
 
 class (IsDatum a) => IsObject a
 
@@ -269,16 +172,6 @@ instance Term Object where
         items <- mapM (\(k, v) -> (,) <$> pure k <*> toTerm v) $ HMS.toList x
         return $ A.Object $ HMS.fromList $ items
 
-instance ToDatum Object where
-    toDatum = Object
-
-instance FromDatum Object where
-    parseDatum (Object o) = do
-        -- HashMap does not provide a mapM, what a shame :(
-        items <- mapM (\(k, v) -> (,) <$> pure k <*> parseDatum v) $ HMS.toList o
-        return $ HMS.fromList items
-
-    parseDatum _          = fail "Object"
 
 
 ------------------------------------------------------------------------------
@@ -295,39 +188,11 @@ instance FromResponse ZonedTime where
 
 instance Term ZonedTime where
     toTerm x = return $ A.object
-        [ "$reql_type$" .= ("TIME" :: Text)
-        , "timezone"    .= (timeZoneOffsetString $ zonedTimeZone x)
-        , "epoch_time"  .= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC x :: Double)
+        [ "$reql_type$" A..= ("TIME" :: Text)
+        , "timezone"    A..= (timeZoneOffsetString $ zonedTimeZone x)
+        , "epoch_time"  A..= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC x :: Double)
         ]
 
-instance ToDatum ZonedTime where
-    toDatum = Time
-
-instance FromDatum ZonedTime where
-    parseDatum (Time x) = return x
-    parseDatum _        = fail "ZonedTime"
-
-
--- | Comparing two times is done on the local time, regardless of the timezone.
--- This is exactly how the RethinkDB server does it.
-eqTime :: ZonedTime -> ZonedTime -> Bool
-eqTime = (==) `on` zonedTimeToUTC
-
-
-zonedTimeParser :: HashMap Text A.Value -> Parser ZonedTime
-zonedTimeParser o = do
-    reqlType <- o .: "$reql_type$"
-    guard $ reqlType == ("TIME" :: Text)
-
-    -- Parse the timezone using 'parseTime'. This overapproximates the
-    -- possible responses from the server, but better than rolling our
-    -- own timezone parser.
-    tz <- o .: "timezone" >>= \tz -> case parseTime defaultTimeLocale "%Z" tz of
-        Just d -> pure d
-        _      -> fail "Could not parse TimeZone"
-
-    t <- o .: "epoch_time" :: Parser Double
-    return $ utcToZonedTime tz $ posixSecondsToUTCTime $ realToFrac t
 
 
 ------------------------------------------------------------------------------
@@ -345,13 +210,6 @@ instance Term UTCTime where
 instance Lift Exp UTCTime where
     type Simplified UTCTime = ZonedTime
     lift = Constant . utcToZonedTime utc
-
-instance ToDatum UTCTime where
-    toDatum = Time . utcToZonedTime utc
-
-instance FromDatum UTCTime where
-    parseDatum (Time x) = return (zonedTimeToUTC x)
-    parseDatum _        = fail "UTCTime"
 
 
 
@@ -632,8 +490,8 @@ instance Term (Exp a) where
         spec' <- mapM toTerm spec
         simpleTerm 41 ([s'] ++ spec')
 
-    toTerm (InsertObject table object) =
-        termWithOptions 56 [SomeExp table, SomeExp (lift object)] emptyOptions
+    toTerm (InsertObject table obj) =
+        termWithOptions 56 [SomeExp table, SomeExp (lift obj)] emptyOptions
 
     toTerm (InsertSequence table s) =
         termWithOptions 56 [SomeExp table, SomeExp s] emptyOptions
@@ -641,11 +499,11 @@ instance Term (Exp a) where
     toTerm (Delete selection) =
         simpleTerm 54 [SomeExp selection]
 
-    toTerm (ObjectField object field) =
-        simpleTerm 31 [SomeExp object, SomeExp field]
+    toTerm (ObjectField obj field) =
+        simpleTerm 31 [SomeExp obj, SomeExp field]
 
-    toTerm (ExtractField object field) =
-        simpleTerm 31 [SomeExp object, SomeExp field]
+    toTerm (ExtractField obj field) =
+        simpleTerm 31 [SomeExp obj, SomeExp field]
 
     toTerm (Coerce value typeName) =
         simpleTerm 51 [SomeExp value, SomeExp typeName]
@@ -870,7 +728,7 @@ class FromResponse a where
 
 responseAtomParser :: (FromDatum a) => Response -> Parser a
 responseAtomParser r = case (responseType r, V.toList (responseResult r)) of
-    (SuccessAtom, [a]) -> parseResult a >>= parseDatum
+    (SuccessAtom, [a]) -> parseWire a >>= parseDatum
     _                  -> fail $ "responseAtomParser: Not a single-element vector " ++ show (responseResult r)
 
 responseSequenceParser :: (FromDatum a) => Response -> Parser (Sequence a)
@@ -879,7 +737,7 @@ responseSequenceParser r = case responseType r of
     SuccessPartial  -> Partial <$> pure (responseToken r) <*> values
     _               -> fail "responseSequenceParser: Unexpected type"
   where
-    values = V.mapM (\x -> parseResult x >>= parseDatum) (responseResult r)
+    values = V.mapM (\x -> parseWire x >>= parseDatum) (responseResult r)
 
 
 
@@ -923,7 +781,7 @@ data Response = Response
 
 responseParser :: Token -> Value -> Parser Response
 responseParser token (A.Object o) =
-    Response <$> pure token <*> o .: "t" <*> o .: "r"
+    Response <$> pure token <*> o A..: "t" <*> o A..: "r"
 responseParser _     _          =
     fail "Response: Unexpected JSON value"
 
