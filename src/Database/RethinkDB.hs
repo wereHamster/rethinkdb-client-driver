@@ -18,6 +18,7 @@ module Database.RethinkDB
     , Sequence
     , Table, Database, SingleSelection
     , Res, Result, FromResponse
+    , ConflictResolutionStrategy(..)
     , emptyOptions
     , lift
     , call1, call2

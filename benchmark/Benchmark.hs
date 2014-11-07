@@ -38,6 +38,6 @@ prepare = do
     h <- newHandle "localhost" defaultPort Nothing
 
     void $ run h (CreateTable db "benchmark")
-    void $ run h (InsertObject table (HMS.singleton "id" (String "id")))
+    void $ run h (InsertObject CRError table (HMS.singleton "id" (String "id")))
 
     return h

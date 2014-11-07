@@ -261,6 +261,31 @@ boundString (Closed _) = "closed"
 
 
 ------------------------------------------------------------------------------
+-- | ConflictResolutionStrategy
+--
+-- How conflicts should be resolved.
+
+data ConflictResolutionStrategy
+
+    = CRError
+      -- ^ Do not insert the new document and record the conflict as an error.
+      -- This is the default.
+
+    | CRReplace
+      -- ^ Replace the old document in its entirety with the new one.
+
+    | CRUpdate
+      -- ^ Update fields of the old document with fields from the new one.
+
+
+instance ToDatum ConflictResolutionStrategy where
+    toDatum CRError   = String "error"
+    toDatum CRReplace = String "replace"
+    toDatum CRUpdate  = String "update"
+
+
+
+------------------------------------------------------------------------------
 -- | Used in 'OrderBy'.
 
 data Order = Ascending !Text | Descending !Text
@@ -378,7 +403,7 @@ data Exp a where
     IsEmpty        :: (IsSequence a) => Exp a -> Exp Bool
     Delete         :: Exp a -> Exp Object
 
-    InsertObject   :: Exp Table -> Object -> Exp Object
+    InsertObject   :: ConflictResolutionStrategy -> Exp Table -> Object -> Exp Object
     -- Insert a single object into the table.
 
     InsertSequence :: (IsSequence s) => Exp Table -> Exp s -> Exp Object
@@ -488,8 +513,9 @@ instance Term (Exp a) where
         spec' <- mapM toTerm spec
         simpleTerm 41 ([s'] ++ spec')
 
-    toTerm (InsertObject table obj) =
-        termWithOptions 56 [SomeExp table, SomeExp (lift obj)] emptyOptions
+    toTerm (InsertObject crs table obj) =
+        termWithOptions 56 [SomeExp table, SomeExp (lift obj)] $
+            HMS.singleton "conflict" (toDatum crs)
 
     toTerm (InsertSequence table s) =
         termWithOptions 56 [SomeExp table, SomeExp s] emptyOptions
