@@ -104,8 +104,7 @@ mkError r e = return $ case V.toList (responseResult r) of
 
 -- | Collect all the values in a sequence and make them available as
 -- a 'Vector a'.
-collect :: (FromResponse (Sequence a))
-        => Handle -> Sequence a -> IO (Either Error (V.Vector a))
+collect :: (FromDatum a) => Handle -> Sequence a -> IO (Either Error (V.Vector a))
 collect _        (Done      x) = return $ Right x
 collect handle s@(Partial _ x) = do
     chunk <- nextChunk handle s
