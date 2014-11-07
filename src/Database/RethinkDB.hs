@@ -8,8 +8,8 @@ module Database.RethinkDB
 
     , Error(..)
 
-    , Term, Exp(..), SomeExp(..)
-    , FromRSON(..), ToDatum(..)
+    , Exp(..), SomeExp(..)
+    , ToDatum(..), FromDatum(..)
     , Array, Object, Datum(..), Bound(..), Order(..)
     , Sequence
     , Table, Database, SingleSelection
@@ -47,7 +47,7 @@ data Handle = Handle
     }
 
 
--- | The default port where RethinkDB accepts cliend driver connections.
+-- | The default port where RethinkDB accepts client driver connections.
 defaultPort :: Int
 defaultPort = 28015
 

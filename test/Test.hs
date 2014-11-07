@@ -60,7 +60,7 @@ main = do
 
 
 expectSuccess
-    :: (Term a, Eq (Result a), FromResponse (Result a), Show (Result a))
+    :: (Eq (Result a), FromResponse (Result a), Show (Result a))
     => Handle -> Exp a -> Result a -> IO Bool
 expectSuccess h query value = do
     res <- run h query
