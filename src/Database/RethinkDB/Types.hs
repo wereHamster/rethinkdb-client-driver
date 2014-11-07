@@ -357,7 +357,11 @@ data Exp a where
     Coerce         :: Exp a -> Exp Text -> Exp b
     Eq             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
     Ne             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
-    Match          :: Exp Text -> Exp Text -> Exp Datum
+    Not            :: Exp Bool -> Exp Bool
+
+    Match :: Exp Text -> Exp Text -> Exp Datum
+    -- ^ First arg is the string, second a regular expression.
+
     Get            :: Exp Table -> Exp Text -> Exp SingleSelection
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
@@ -377,6 +381,9 @@ data Exp a where
     ExtractField :: (IsSequence a) => Exp a -> Exp Text -> Exp a
     -- Like 'ObjectField' but over a sequence.
 
+    HasFields :: (IsObject a) => [Text] -> Exp a -> Exp Bool
+    -- True if the object has all the given fields.
+
     Take           :: (IsSequence s) => Exp Double -> Exp s -> Exp s
     Append         :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
     Prepend        :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
@@ -390,15 +397,15 @@ data Exp a where
     -- Insert a sequence into the table.
 
     Filter :: (IsSequence s) => (Exp a -> Exp Bool) -> Exp s -> Exp s
-    Map :: (IsSequence s) => (Exp a -> Exp b) -> Exp s -> Exp s
+    Map :: (IsSequence s) => (Exp a -> Exp b) -> Exp s -> Exp (Sequence b)
 
-    Between :: (IsSequence s) => Exp s -> (Bound, Bound) -> Exp s
+    Between :: (IsSequence s) => (Bound, Bound) -> Exp s -> Exp s
     -- Select all elements whose primary key is between the two bounds.
 
-    BetweenIndexed :: (IsSequence s) => Exp s -> (Bound, Bound) -> Text -> Exp s
+    BetweenIndexed :: (IsSequence s) => Text -> (Bound, Bound) -> Exp s -> Exp s
     -- Select all elements whose secondary index is between the two bounds.
 
-    OrderBy :: (IsSequence s) => [Order] -> Exp s -> Exp s
+    OrderBy :: (IsSequence s) => [Order] -> Exp s -> Exp (Array Datum)
     -- Order a sequence based on the given order specificiation.
 
     Keys :: (IsObject a) => Exp a -> Exp (Array Text)
@@ -415,6 +422,9 @@ data Exp a where
     Call :: Exp f -> [SomeExp] -> Exp r
     -- Call the given function. The function should take the same number of
     -- arguments as there are provided.
+
+    Limit :: (IsSequence s) => Double -> Exp s -> Exp s
+    -- ^ Limit the number of items in the sequence.
 
 
 instance Term (Exp a) where
@@ -470,14 +480,14 @@ instance Term (Exp a) where
     toTerm (Map f s) =
         simpleTerm 38 [SomeExp s, SomeExp (lift f)]
 
-    toTerm (Between s (l, u)) =
+    toTerm (Between (l, u) s) =
         termWithOptions 36 [SomeExp s, SomeExp $ lift (boundDatum l), SomeExp $ lift (boundDatum u)] $
             HMS.fromList
                 [ ("left_bound",  String (boundString l))
                 , ("right_bound", String (boundString u))
                 ]
 
-    toTerm (BetweenIndexed s (l, u) index) =
+    toTerm (BetweenIndexed index (l, u) s) =
         termWithOptions 36 [SomeExp s, SomeExp $ lift (boundDatum l), SomeExp $ lift (boundDatum u)] $
             HMS.fromList
                 [ ("left_bound",  String (boundString l))
@@ -505,6 +515,9 @@ instance Term (Exp a) where
     toTerm (ExtractField obj field) =
         simpleTerm 31 [SomeExp obj, SomeExp field]
 
+    toTerm (HasFields fields obj) =
+        simpleTerm 32 ([SomeExp obj] ++ map (SomeExp . lift) fields)
+
     toTerm (Coerce value typeName) =
         simpleTerm 51 [SomeExp value, SomeExp typeName]
 
@@ -526,8 +539,11 @@ instance Term (Exp a) where
     toTerm (Ne a b) =
         simpleTerm 18 [SomeExp a, SomeExp b]
 
-    toTerm (Match a b) =
-        simpleTerm 97 [SomeExp a, SomeExp b]
+    toTerm (Not e) =
+        simpleTerm 23 [SomeExp e]
+
+    toTerm (Match str re) =
+        simpleTerm 97 [SomeExp str, SomeExp re]
 
     toTerm (Get table key) =
         simpleTerm 16 [SomeExp table, SomeExp key]
@@ -563,6 +579,9 @@ instance Term (Exp a) where
 
     toTerm (Call f args) =
         simpleTerm 64 ([SomeExp f] ++ args)
+
+    toTerm (Limit n s) =
+        simpleTerm 71 [SomeExp s, SomeExp (lift n)]
 
 
 simpleTerm :: (Term a) => Int -> [a] -> State Context A.Value
@@ -733,9 +752,10 @@ responseAtomParser r = case (responseType r, V.toList (responseResult r)) of
 
 responseSequenceParser :: (FromDatum a) => Response -> Parser (Sequence a)
 responseSequenceParser r = case responseType r of
+    SuccessAtom     -> Done    <$> responseAtomParser r
     SuccessSequence -> Done    <$> values
     SuccessPartial  -> Partial <$> pure (responseToken r) <*> values
-    _               -> fail "responseSequenceParser: Unexpected type"
+    rt              -> fail $ "responseSequenceParser: Unexpected type " ++ show rt
   where
     values = V.mapM (\x -> parseWire x >>= parseDatum) (responseResult r)
 
