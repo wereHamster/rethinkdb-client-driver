@@ -72,7 +72,7 @@ newHandle host port mbAuth = do
 -- | Start a new query and wait for its (first) result. If the result is an
 -- single value ('Datum'), then three will be no further results. If it is
 -- a sequence, then you must consume results until the sequence ends.
-run :: (Term a, FromResponse (Result a))
+run :: (FromResponse (Result a))
     => Handle -> Exp a -> IO (Res a)
 run handle expr = do
     _token <- start handle expr
@@ -117,7 +117,7 @@ collect handle s@(Partial _ x) = do
 
 -- | Start a new query. Returns the 'Token' which can be used to track its
 -- progress.
-start :: (Term a) => Handle -> a -> IO Token
+start :: Handle -> Exp a -> IO Token
 start handle term = do
     token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
     sendMessage (hSocket handle) (queryMessage token msg)

@@ -104,7 +104,7 @@ data Datum
     deriving (Show, Generic)
 
 
-class (Term a) => IsDatum a
+class IsDatum a
 
 
 instance IsDatum Datum
@@ -255,7 +255,7 @@ instance (ToDatum a) => ToDatum (Array a) where
 type Object = HashMap Text Datum
 
 
-class (Term a, IsDatum a) => IsObject a
+class (IsDatum a) => IsObject a
 
 
 instance IsDatum  Object
@@ -430,7 +430,7 @@ data Sequence a
     | Partial !Token !(Vector a)
 
 
-class (Term a) => IsSequence a
+class IsSequence a
 
 
 instance Show (Sequence a) where
@@ -489,7 +489,7 @@ data Exp a where
     Database       :: Exp Text -> Exp Database
     Table          :: Exp Text -> Exp Table
 
-    Coerce         :: (Term a, Term b) => Exp a -> Exp Text -> Exp b
+    Coerce         :: Exp a -> Exp Text -> Exp b
     Eq             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
     Ne             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
     Match          :: Exp Text -> Exp Text -> Exp Datum
@@ -497,8 +497,8 @@ data Exp a where
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
 
-    Add            :: (Term a, Num a) => [Exp a] -> Exp a
-    Multiply       :: (Term a, Num a) => [Exp a] -> Exp a
+    Add            :: (Num a) => [Exp a] -> Exp a
+    Multiply       :: (Num a) => [Exp a] -> Exp a
 
     All :: [Exp Bool] -> Exp Bool
     -- True if all the elements in the input are True.
@@ -516,7 +516,7 @@ data Exp a where
     Append         :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
     Prepend        :: (IsDatum a) => Exp (Array a) -> Exp a -> Exp (Array a)
     IsEmpty        :: (IsSequence a) => Exp a -> Exp Bool
-    Delete         :: (Term a) => Exp a -> Exp Object
+    Delete         :: Exp a -> Exp Object
 
     InsertObject   :: Exp Table -> Object -> Exp Object
     -- Insert a single object into the table.
@@ -524,8 +524,8 @@ data Exp a where
     InsertSequence :: (IsSequence s) => Exp Table -> Exp s -> Exp Object
     -- Insert a sequence into the table.
 
-    Filter :: (IsSequence s, Term a) => (Exp a -> Exp Bool) -> Exp s -> Exp s
-    Map :: (IsSequence s, Term a, Term b) => (Exp a -> Exp b) -> Exp s -> Exp s
+    Filter :: (IsSequence s) => (Exp a -> Exp Bool) -> Exp s -> Exp s
+    Map :: (IsSequence s) => (Exp a -> Exp b) -> Exp s -> Exp s
 
     Between :: (IsSequence s) => Exp s -> (Bound, Bound) -> Exp s
     -- Select all elements whose primary key is between the two bounds.
@@ -541,13 +541,13 @@ data Exp a where
     Var :: Int -> Exp a
     -- A 'Var' is used as a placeholder in input to functions.
 
-    Function :: (Term a) => State Context ([Int], Exp a) -> Exp f
+    Function :: State Context ([Int], Exp a) -> Exp f
     -- Creates a function. The action should take care of allocating an
     -- appropriate number of variables from the context. Note that you should
     -- not use this constructor directly. There are 'Lift' instances for all
     -- commonly used functions.
 
-    Call :: (Term f) => Exp f -> [SomeExp] -> Exp r
+    Call :: Exp f -> [SomeExp] -> Exp r
     -- Call the given function. The function should take the same number of
     -- arguments as there are provided.
 
@@ -558,7 +558,7 @@ instance Term (Exp a) where
 
 
     toTerm ListDatabases =
-        simpleTerm 59 []
+        simpleTerm 59 ([] :: [SomeExp])
 
     toTerm (CreateDatabase name) =
         simpleTerm 57 [SomeExp name]
@@ -623,7 +623,7 @@ instance Term (Exp a) where
     toTerm (OrderBy spec s) = do
         s'    <- toTerm s
         spec' <- mapM toTerm spec
-        simpleTerm2 41 ([s'] ++ spec')
+        simpleTerm 41 ([s'] ++ spec')
 
     toTerm (InsertObject table object) =
         termWithOptions 56 [SomeExp table, SomeExp (lift object)] emptyOptions
@@ -700,17 +700,12 @@ instance Term (Exp a) where
         simpleTerm 64 ([SomeExp f] ++ args)
 
 
-simpleTerm :: Int -> [SomeExp] -> State Context A.Value
+simpleTerm :: (Term a) => Int -> [a] -> State Context A.Value
 simpleTerm termType args = do
     args' <- mapM toTerm args
     return $ A.Array $ V.fromList [toJSON termType, toJSON args']
 
-simpleTerm2 :: (Term a) => Int -> [a] -> State Context A.Value
-simpleTerm2 termType args = do
-    args' <- mapM toTerm args
-    return $ A.Array $ V.fromList [toJSON termType, toJSON args']
-
-termWithOptions :: Int -> [SomeExp] -> Object -> State Context A.Value
+termWithOptions :: (Term a) => Int -> [a] -> Object -> State Context A.Value
 termWithOptions termType args options = do
     args'    <- mapM toTerm args
     options' <- toTerm options
@@ -778,13 +773,13 @@ instance Lift Exp (Array Datum) where
     type Simplified (Array Datum) = (Array Datum)
     lift = Constant
 
-instance (Term r) => Lift Exp (Exp a -> Exp r) where
+instance Lift Exp (Exp a -> Exp r) where
     type Simplified (Exp a -> Exp r) = Exp r
     lift f = Function $ do
         v1 <- newVar
         return $ ([v1], f (Var v1))
 
-instance (Term r) => Lift Exp (Exp a -> Exp b -> Exp r) where
+instance Lift Exp (Exp a -> Exp b -> Exp r) where
     type Simplified (Exp a -> Exp b -> Exp r) = Exp r
     lift f = Function $ do
         v1 <- newVar
@@ -798,18 +793,12 @@ instance (Term r) => Lift Exp (Exp a -> Exp b -> Exp r) where
 -- used instead of the 'Call' constructor because they provide type safety.
 
 -- | Call an unary function with the given argument.
-call1 :: (Term a, Term r)
-      => (Exp a -> Exp r)
-      -> Exp a
-      -> Exp r
+call1 :: (Exp a -> Exp r) -> Exp a -> Exp r
 call1 f a = Call (lift f) [SomeExp a]
 
 
 -- | Call an binary function with the given arguments.
-call2 :: (Term a, Term b, Term r)
-      => (Exp a -> Exp b -> Exp r)
-      -> Exp a -> Exp b
-      -> Exp r
+call2 :: (Exp a -> Exp b -> Exp r) -> Exp a -> Exp b -> Exp r
 call2 f a b = Call (lift f) [SomeExp a, SomeExp b]
 
 
@@ -823,7 +812,7 @@ emptyOptions = HMS.empty
 -- arguments can, and often have, different types).
 
 data SomeExp where
-     SomeExp :: (Term a) => Exp a -> SomeExp
+     SomeExp :: Exp a -> SomeExp
 
 instance Term SomeExp where
     toTerm (SomeExp e) = toTerm e
