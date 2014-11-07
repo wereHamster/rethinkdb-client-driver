@@ -223,9 +223,6 @@ data Table = MkTable
 
 instance IsSequence Table
 
-instance Term Table where
-    toTerm = error "toTerm Table: Server-only type"
-
 
 
 ------------------------------------------------------------------------------
@@ -234,9 +231,6 @@ instance Term Table where
 
 data SingleSelection = SingleSelection
     deriving (Show)
-
-instance Term SingleSelection where
-    toTerm = error "toTerm SingleSelection: Server-only type"
 
 instance IsDatum  SingleSelection
 instance IsObject SingleSelection
@@ -248,9 +242,6 @@ instance IsObject SingleSelection
 -- type.
 
 data Database = MkDatabase
-
-instance Term Database where
-    toTerm = error "toTerm Database: Server-only type"
 
 
 
@@ -300,9 +291,6 @@ instance Show (Sequence a) where
 
 instance (FromDatum a) => FromResponse (Sequence a) where
     parseResponse = responseSequenceParser
-
-instance Term (Sequence a) where
-    toTerm = error "toTerm Sequence: Server-only type"
 
 instance IsSequence (Sequence a)
 
