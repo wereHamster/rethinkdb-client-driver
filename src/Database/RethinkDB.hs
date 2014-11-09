@@ -49,6 +49,10 @@ import           Database.RethinkDB.Messages
 data Handle = Handle
     { hSocket   :: !Socket
     , hTokenRef :: !(IORef Token)
+
+    , hDatabase :: !(Exp Database)
+      -- ^ The database which should be used when the 'Table' expression
+      -- doesn't specify one.
     }
 
 
@@ -58,8 +62,8 @@ defaultPort = 28015
 
 
 -- | Create a new handle to the RethinkDB server.
-newHandle :: Text -> Int -> Maybe Text -> IO Handle
-newHandle host port mbAuth = do
+newHandle :: Text -> Int -> Maybe Text -> Exp Database -> IO Handle
+newHandle host port mbAuth db = do
     sock <- createSocket host port
 
     -- Do the handshake dance. Note that we currently ignore the reply and
@@ -71,7 +75,7 @@ newHandle host port mbAuth = do
     -- one and then count up.
     ref <- newIORef 1
 
-    return $ Handle sock ref
+    return $ Handle sock ref db
 
 
 -- | Start a new query and wait for its (first) result. If the result is an
@@ -128,7 +132,7 @@ start handle term = do
     return token
 
   where
-    msg = compileTerm $ do
+    msg = compileTerm (hDatabase handle) $ do
         term'    <- toTerm term
         options' <- toTerm emptyOptions
         return $ A.Array $ V.fromList

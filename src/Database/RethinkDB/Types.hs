@@ -48,13 +48,17 @@ instance Term A.Value where
 -- is done using this as the context.
 
 data Context = Context
-    { varCounter :: Int
+    { varCounter :: !Int
       -- ^ How many 'Var's have been allocated. See 'newVar'.
+
+    , defaultDatabase :: !(Exp Database)
+      -- ^ The default database for the case that the 'Table' expression
+      -- doesn't specify one.
     }
 
 
-compileTerm :: State Context A.Value -> A.Value
-compileTerm e = evalState e (Context 0)
+compileTerm :: Exp Database -> State Context A.Value -> A.Value
+compileTerm db e = evalState e (Context 0 db)
 
 
 -- | Allocate a new var index from the context.
@@ -365,7 +369,7 @@ data Exp a where
 
 
     Database       :: Exp Text -> Exp Database
-    Table          :: Exp Text -> Exp Table
+    Table          :: Maybe (Exp Database) -> Exp Text -> Exp Table
 
     Coerce         :: Exp a -> Exp Text -> Exp b
     Eq             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
@@ -484,8 +488,9 @@ instance Term (Exp a) where
     toTerm (Database name) =
         simpleTerm 14 [SomeExp name]
 
-    toTerm (Table name) =
-        simpleTerm 15 [SomeExp name]
+    toTerm (Table mbDatabase name) = do
+        db <- maybe (gets defaultDatabase) return mbDatabase
+        simpleTerm 15 [SomeExp db, SomeExp name]
 
     toTerm (Filter f s) =
         simpleTerm 39 [SomeExp s, SomeExp (lift f)]

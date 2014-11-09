@@ -18,7 +18,7 @@ db :: Exp Database
 db = Database "test"
 
 table :: Exp Table
-table = Table "benchmark"
+table = Table Nothing "benchmark"
 
 
 main :: IO ()
@@ -35,7 +35,7 @@ main = do
 
 prepare :: IO Handle
 prepare = do
-    h <- newHandle "localhost" defaultPort Nothing
+    h <- newHandle "localhost" defaultPort Nothing (Database "test")
 
     void $ run h (CreateTable db "benchmark")
     void $ run h (InsertObject CRError table (HMS.singleton "id" (String "id")))
