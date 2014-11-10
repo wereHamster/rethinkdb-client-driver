@@ -110,7 +110,7 @@ parseWire (A.Array  x) = Array <$> V.mapM parseWire x
 parseWire (A.Object x) = (Time <$> zonedTimeParser x) <|> do
     -- HashMap does not provide a mapM, what a shame :(
     items <- mapM (\(k, v) -> (,) <$> pure k <*> parseWire v) $ HMS.toList x
-    return $ Object $ HMS.fromList items
+    pure $ Object $ HMS.fromList items
 
 
 zonedTimeParser :: HashMap Text A.Value -> Parser ZonedTime
@@ -149,7 +149,7 @@ k .= v = (k, toDatum v)
 o .: k = maybe (fail $ "key " ++ show k ++ "not found") parseDatum $ HMS.lookup k o
 
 (.:?) :: FromDatum a => HashMap Text Datum -> Text -> Parser (Maybe a)
-o .:? k = maybe (return Nothing) (fmap Just . parseDatum) $ HMS.lookup k o
+o .:? k = maybe (pure Nothing) (fmap Just . parseDatum) $ HMS.lookup k o
 
 object :: [(Text, Datum)] -> Datum
 object = Object . HMS.fromList

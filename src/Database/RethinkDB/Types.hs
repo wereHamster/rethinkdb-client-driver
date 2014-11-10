@@ -39,7 +39,7 @@ class Term a where
     toTerm :: a -> State Context A.Value
 
 instance Term A.Value where
-    toTerm = return
+    toTerm = pure
 
 
 
@@ -66,7 +66,7 @@ newVar :: State Context Int
 newVar = do
     ix <- gets varCounter
     modify $ \s -> s { varCounter = ix + 1 }
-    return ix
+    pure ix
 
 
 
@@ -75,7 +75,7 @@ class IsDatum a
 instance IsDatum Datum
 
 instance Term Datum where
-    toTerm (Null    ) = return $ A.Null
+    toTerm (Null    ) = pure $ A.Null
     toTerm (Bool   x) = toTerm x
     toTerm (Number x) = toTerm x
     toTerm (String x) = toTerm x
@@ -91,8 +91,8 @@ instance FromResponse (Maybe Datum) where
         (SuccessAtom, [a]) -> do
             res0 <- parseWire a
             case res0 of
-                Null -> return Nothing
-                res  -> return $ Just res
+                Null -> pure Nothing
+                res  -> pure $ Just res
         _                  -> fail $ "responseAtomParser: Not a single-element vector " ++ show (responseResult r)
 
 
@@ -106,7 +106,7 @@ instance FromResponse Bool where
     parseResponse = responseAtomParser
 
 instance Term Bool where
-    toTerm = return . A.Bool
+    toTerm = pure . A.Bool
 
 
 
@@ -120,7 +120,7 @@ instance FromResponse Double where
     parseResponse = responseAtomParser
 
 instance Term Double where
-    toTerm = return . toJSON
+    toTerm = pure . toJSON
 
 
 instance FromResponse Int where
@@ -137,7 +137,7 @@ instance FromResponse Text where
     parseResponse = responseAtomParser
 
 instance Term Text where
-    toTerm = return . toJSON
+    toTerm = pure . toJSON
 
 
 
@@ -154,7 +154,7 @@ instance (Term a) => Term (Array a) where
     toTerm v = do
         vals    <- mapM toTerm (V.toList v)
         options <- toTerm emptyOptions
-        return $ A.Array $ V.fromList $
+        pure $ A.Array $ V.fromList $
             [ A.Number 2
             , toJSON vals
             , toJSON $ options
@@ -178,7 +178,7 @@ instance FromResponse Object where
 instance Term Object where
     toTerm x = do
         items <- mapM (\(k, v) -> (,) <$> pure k <*> toTerm v) $ HMS.toList x
-        return $ A.Object $ HMS.fromList $ items
+        pure $ A.Object $ HMS.fromList $ items
 
 
 
@@ -195,7 +195,7 @@ instance FromResponse ZonedTime where
     parseResponse = responseAtomParser
 
 instance Term ZonedTime where
-    toTerm x = return $ A.object
+    toTerm x = pure $ A.object
         [ "$reql_type$" A..= ("TIME" :: Text)
         , "timezone"    A..= (timeZoneOffsetString $ zonedTimeZone x)
         , "epoch_time"  A..= (realToFrac $ utcTimeToPOSIXSeconds $ zonedTimeToUTC x :: Double)
@@ -295,8 +295,8 @@ instance ToDatum ConflictResolutionStrategy where
 data Order = Ascending !Text | Descending !Text
 
 instance Term Order where
-    toTerm (Ascending  key) = simpleTerm 73 [SomeExp $ Constant $ String key]
-    toTerm (Descending key) = simpleTerm 74 [SomeExp $ Constant $ String key]
+    toTerm (Ascending  key) = simpleTerm 73 [SomeExp $ lift key]
+    toTerm (Descending key) = simpleTerm 74 [SomeExp $ lift key]
 
 
 
@@ -510,7 +510,7 @@ instance Term (Exp a) where
         simpleTerm 14 [SomeExp name]
 
     toTerm (Table mbDatabase name) = do
-        db <- maybe (gets defaultDatabase) return mbDatabase
+        db <- maybe (gets defaultDatabase) pure mbDatabase
         simpleTerm 15 [SomeExp db, SomeExp name]
 
     toTerm (Filter f s) =
@@ -649,14 +649,14 @@ noargTerm termType = pure $ A.Array $ V.fromList [toJSON termType]
 simpleTerm :: (Term a) => Int -> [a] -> State Context A.Value
 simpleTerm termType args = do
     args' <- mapM toTerm args
-    return $ A.Array $ V.fromList [toJSON termType, toJSON args']
+    pure $ A.Array $ V.fromList [toJSON termType, toJSON args']
 
 termWithOptions :: (Term a) => Int -> [a] -> Object -> State Context A.Value
 termWithOptions termType args options = do
     args'    <- mapM toTerm args
     options' <- toTerm options
 
-    return $ A.Array $ V.fromList [toJSON termType, toJSON args', toJSON options']
+    pure $ A.Array $ V.fromList [toJSON termType, toJSON args', toJSON options']
 
 
 -- | Convenience to for automatically converting a 'Text' to a constant
@@ -731,14 +731,14 @@ instance Lift Exp (Exp a -> Exp r) where
     type Simplified (Exp a -> Exp r) = Exp r
     lift f = Function $ do
         v1 <- newVar
-        return $ ([v1], f (Var v1))
+        pure $ ([v1], f (Var v1))
 
 instance Lift Exp (Exp a -> Exp b -> Exp r) where
     type Simplified (Exp a -> Exp b -> Exp r) = Exp r
     lift f = Function $ do
         v1 <- newVar
         v2 <- newVar
-        return $ ([v1, v2], f (Var v1) (Var v2))
+        pure $ ([v1, v2], f (Var v1) (Var v2))
 
 
 
