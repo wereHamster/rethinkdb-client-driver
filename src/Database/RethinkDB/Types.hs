@@ -215,10 +215,6 @@ instance FromResponse UTCTime where
 instance Term UTCTime where
     toTerm = toTerm . utcToZonedTime utc
 
-instance Lift Exp UTCTime where
-    type Simplified UTCTime = ZonedTime
-    lift = Constant . utcToZonedTime utc
-
 
 
 ------------------------------------------------------------------------------
@@ -722,6 +718,10 @@ instance Lift Exp Datum where
 instance Lift Exp ZonedTime where
     type Simplified ZonedTime = ZonedTime
     lift = Constant
+
+instance Lift Exp UTCTime where
+    type Simplified UTCTime = ZonedTime
+    lift = Constant . utcToZonedTime utc
 
 instance Lift Exp (Array Datum) where
     type Simplified (Array Datum) = (Array Datum)
