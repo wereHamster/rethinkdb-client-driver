@@ -395,9 +395,6 @@ data Exp a where
     ObjectField :: (IsObject a, IsDatum r) => Exp a -> Exp Text -> Exp r
     -- Get a particular field from an object (or SingleSelection).
 
-    ExtractField :: (IsSequence a) => Exp a -> Exp Text -> Exp a
-    -- Like 'ObjectField' but over a sequence.
-
     HasFields :: (IsObject a) => [Text] -> Exp a -> Exp Bool
     -- True if the object has all the given fields.
 
@@ -550,9 +547,6 @@ instance Term (Exp a) where
         simpleTerm 54 [SomeExp selection]
 
     toTerm (ObjectField obj field) =
-        simpleTerm 31 [SomeExp obj, SomeExp field]
-
-    toTerm (ExtractField obj field) =
         simpleTerm 31 [SomeExp obj, SomeExp field]
 
     toTerm (HasFields fields obj) =
