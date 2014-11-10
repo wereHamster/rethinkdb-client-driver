@@ -392,7 +392,7 @@ data Exp a where
     Any :: [Exp Bool] -> Exp Bool
     -- True if any element in the input is True.
 
-    ObjectField :: (IsObject a, IsDatum r) => Exp a -> Exp Text -> Exp r
+    GetField :: (IsObject a, IsDatum r) => Exp Text -> Exp a -> Exp r
     -- Get a particular field from an object (or SingleSelection).
 
     HasFields :: (IsObject a) => [Text] -> Exp a -> Exp Bool
@@ -546,7 +546,7 @@ instance Term (Exp a) where
     toTerm (Delete selection) =
         simpleTerm 54 [SomeExp selection]
 
-    toTerm (ObjectField obj field) =
+    toTerm (GetField field obj) =
         simpleTerm 31 [SomeExp obj, SomeExp field]
 
     toTerm (HasFields fields obj) =
