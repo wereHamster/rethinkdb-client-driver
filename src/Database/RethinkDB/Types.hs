@@ -123,6 +123,10 @@ instance Term Double where
     toTerm = return . toJSON
 
 
+instance FromResponse Int where
+    parseResponse = responseAtomParser
+
+
 
 ------------------------------------------------------------------------------
 -- | For strings, we're using the Haskell 'Text' type.
@@ -443,6 +447,27 @@ data Exp a where
     Limit :: (IsSequence s) => Double -> Exp s -> Exp s
     -- ^ Limit the number of items in the sequence.
 
+    UUID :: Exp Text
+    -- ^ An expression which when evaluated will generate a fresh UUID (in its
+    -- standard string encoding).
+
+    Now :: Exp ZonedTime
+    -- ^ The time when the query was received by the server.
+
+    Timezone :: Exp ZonedTime -> Exp Text
+    -- ^ The timezone in which the given time is.
+
+    RandomInteger :: Exp Int -> Exp Int -> Exp Int
+    -- ^ Takes a lower and upper bound and returns a random integer between
+    -- the two. Note that the lower bound is closed, the upper bound is open,
+    -- ie: [min, max)
+
+    RandomFloat :: Exp Double -> Exp Double -> Exp Double
+    -- ^ Same as 'RandomInteger' but uses floating-point numbers.
+
+    Info :: Exp a -> Exp Object
+    -- ^ Gets info about anything.
+
 
 instance Term (Exp a) where
     toTerm (Constant datum) =
@@ -450,7 +475,7 @@ instance Term (Exp a) where
 
 
     toTerm ListDatabases =
-        simpleTerm 59 ([] :: [SomeExp])
+        noargTerm 59
 
     toTerm (CreateDatabase name) =
         simpleTerm 57 [SomeExp name]
@@ -602,6 +627,28 @@ instance Term (Exp a) where
     toTerm (Limit n s) =
         simpleTerm 71 [SomeExp s, SomeExp (lift n)]
 
+    toTerm UUID =
+        noargTerm 169
+
+    toTerm Now =
+        noargTerm 103
+
+    toTerm (Timezone time) =
+        simpleTerm 127 [SomeExp time]
+
+    toTerm (RandomInteger lo hi) =
+        simpleTerm 151 [SomeExp lo, SomeExp hi]
+
+    toTerm (RandomFloat lo hi) =
+        termWithOptions 151 [SomeExp lo, SomeExp hi] $
+            HMS.singleton "float" (Bool True)
+
+    toTerm (Info a) =
+        simpleTerm 79 [SomeExp a]
+
+
+noargTerm :: Int -> State Context A.Value
+noargTerm termType = pure $ A.Array $ V.fromList [toJSON termType]
 
 simpleTerm :: (Term a) => Int -> [a] -> State Context A.Value
 simpleTerm termType args = do
@@ -650,6 +697,10 @@ class Lift c e where
 
 instance Lift Exp Bool where
     type Simplified Bool = Bool
+    lift = Constant
+
+instance Lift Exp Int where
+    type Simplified Int = Int
     lift = Constant
 
 instance Lift Exp Double where
@@ -728,6 +779,7 @@ type family Result a
 
 type instance Result Text            = Text
 type instance Result Double          = Double
+type instance Result Int             = Int
 type instance Result Bool            = Bool
 type instance Result ZonedTime       = ZonedTime
 
