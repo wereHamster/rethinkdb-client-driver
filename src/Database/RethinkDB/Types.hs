@@ -461,6 +461,13 @@ data Exp a where
     Info :: Exp a -> Exp Object
     -- ^ Gets info about anything.
 
+    Default :: Exp a -> Exp a -> Exp a
+    -- ^ Evaluate the first argument. If it throws an error then the second
+    -- argument is returned.
+
+    Error :: Exp Text -> Exp a
+    -- ^ Throw an error with the given message.
+
 
 instance Term (Exp a) where
     toTerm (Constant datum) =
@@ -635,6 +642,12 @@ instance Term (Exp a) where
 
     toTerm (Info a) =
         simpleTerm 79 [SomeExp a]
+
+    toTerm (Default action def) =
+        simpleTerm 92 [SomeExp action, SomeExp def]
+
+    toTerm (Error message) =
+        simpleTerm 12 [SomeExp message]
 
 
 noargTerm :: Int -> State Context A.Value
