@@ -3,7 +3,7 @@
 
 module Database.RethinkDB
     ( Handle
-    , defaultPort, newHandle
+    , defaultPort, newHandle, close
     , run, nextChunk, collect, stop, wait
 
     , Error(..)
@@ -76,6 +76,11 @@ newHandle host port mbAuth db = do
     ref <- newIORef 1
 
     return $ Handle sock ref db
+
+
+-- | Close the given handle. You MUST NOT use the handle after this.
+close :: Handle -> IO ()
+close handle = closeSocket (hSocket handle)
 
 
 -- | Start a new query and wait for its (first) result. If the result is an

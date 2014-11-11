@@ -19,7 +19,7 @@ import           Data.Binary.Put
 import           Data.Binary.Get as Get
 
 import           Network.Socket (Socket, AddrInfo(..), AddrInfoFlag(..), SocketType(..))
-import           Network.Socket (getAddrInfo, socket, connect, defaultHints)
+import           Network.Socket (getAddrInfo, socket, connect, close, defaultHints)
 
 import           Network.Socket.ByteString      (recv)
 import           Network.Socket.ByteString.Lazy (sendAll)
@@ -37,6 +37,9 @@ createSocket host port = do
   where
     hints = defaultHints { addrSocketType = Stream, addrFlags = [ AI_NUMERICSERV ] }
 
+
+closeSocket :: Socket -> IO ()
+closeSocket = close
 
 
 sendMessage :: Socket -> BS.ByteString -> IO ()
