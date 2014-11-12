@@ -440,6 +440,9 @@ data Exp a where
     Limit :: (IsSequence s) => Double -> Exp s -> Exp s
     -- ^ Limit the number of items in the sequence.
 
+    Nth :: (IsSequence s, IsDatum r) => Double -> Exp s -> Exp r
+    -- ^ Return the n-th element in the sequence.
+
     UUID :: Exp Text
     -- ^ An expression which when evaluated will generate a fresh UUID (in its
     -- standard string encoding).
@@ -623,6 +626,9 @@ instance Term (Exp a) where
 
     toTerm (Limit n s) =
         simpleTerm 71 [SomeExp s, SomeExp (lift n)]
+
+    toTerm (Nth n s) =
+        simpleTerm 45 [SomeExp s, SomeExp (lift n)]
 
     toTerm UUID =
         noargTerm 169
