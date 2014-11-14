@@ -168,6 +168,18 @@ instance FromDatum Datum where
 
 
 ------------------------------------------------------------------------------
+-- ()
+
+instance ToDatum () where
+    toDatum () = Array V.empty
+
+instance FromDatum () where
+    parseDatum (Array x) = if V.null x then pure () else fail "()"
+    parseDatum _         = fail "()"
+
+
+
+------------------------------------------------------------------------------
 -- Bool
 
 instance ToDatum Bool where
@@ -188,6 +200,18 @@ instance ToDatum Double where
 instance FromDatum Double where
     parseDatum (Number x) = pure x
     parseDatum _          = fail "Double"
+
+
+
+------------------------------------------------------------------------------
+-- Float
+
+instance ToDatum Float where
+    toDatum = Number . realToFrac
+
+instance FromDatum Float where
+    parseDatum (Number x) = pure $ realToFrac x
+    parseDatum _          = fail "Float"
 
 
 
