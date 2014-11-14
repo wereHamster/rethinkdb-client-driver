@@ -49,10 +49,11 @@ library
                       , vector
 
     exposed-modules   : Database.RethinkDB
+                      , Database.RethinkDB.TH
+
     other-modules     : Database.RethinkDB.Messages
                       , Database.RethinkDB.Types
                       , Database.RethinkDB.Types.Datum
-                      , Database.RethinkDB.TH
 
     ghc-options       : -Wall
 
