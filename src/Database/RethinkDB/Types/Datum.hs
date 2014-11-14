@@ -149,7 +149,7 @@ k .= v = (k, toDatum v)
 o .: k = maybe (fail $ "key " ++ show k ++ "not found") parseDatum $ HMS.lookup k o
 
 (.:?) :: FromDatum a => HashMap Text Datum -> Text -> Parser (Maybe a)
-o .:? k = maybe (pure Nothing) (fmap Just . parseDatum) $ HMS.lookup k o
+o .:? k = maybe (pure Nothing) parseDatum $ HMS.lookup k o
 
 object :: [(Text, Datum)] -> Datum
 object = Object . HMS.fromList
