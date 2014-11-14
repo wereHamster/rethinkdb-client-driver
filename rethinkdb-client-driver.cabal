@@ -42,6 +42,7 @@ library
                       , network
                       , old-locale
                       , scientific
+                      , template-haskell
                       , text
                       , time
                       , unordered-containers
@@ -51,6 +52,7 @@ library
     other-modules     : Database.RethinkDB.Messages
                       , Database.RethinkDB.Types
                       , Database.RethinkDB.Types.Datum
+                      , Database.RethinkDB.TH
 
     ghc-options       : -Wall
 
