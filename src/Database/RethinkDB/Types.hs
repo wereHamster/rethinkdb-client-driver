@@ -24,6 +24,7 @@ import qualified Data.Aeson          as A
 
 import           Data.Vector         (Vector)
 import qualified Data.Vector         as V
+import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMS
 
 import           Database.RethinkDB.Types.Datum
@@ -422,6 +423,9 @@ data Exp a where
     OrderBy :: (IsSequence s) => [Order] -> Exp s -> Exp (Array Datum)
     -- Order a sequence based on the given order specificiation.
 
+    OrderByIndexed :: (IsSequence s) => Order -> Exp s -> Exp (Array Datum)
+    -- Like OrderBy but uses a secondary index instead of a object field.
+
     Keys :: (IsObject a) => Exp a -> Exp (Array Text)
 
     Var :: Int -> Exp a
@@ -529,16 +533,16 @@ instance Term (Exp a) where
     toTerm (Between (l, u) s) =
         termWithOptions 36 [SomeExp s, SomeExp $ lift (boundDatum l), SomeExp $ lift (boundDatum u)] $
             HMS.fromList
-                [ ("left_bound",  String (boundString l))
-                , ("right_bound", String (boundString u))
+                [ ("left_bound",  toJSON $ String (boundString l))
+                , ("right_bound", toJSON $ String (boundString u))
                 ]
 
     toTerm (BetweenIndexed index (l, u) s) =
         termWithOptions 36 [SomeExp s, SomeExp $ lift (boundDatum l), SomeExp $ lift (boundDatum u)] $
             HMS.fromList
-                [ ("left_bound",  String (boundString l))
-                , ("right_bound", String (boundString u))
-                , ("index",       String index)
+                [ ("left_bound",  toJSON $ String (boundString l))
+                , ("right_bound", toJSON $ String (boundString u))
+                , ("index",       toJSON $ String index)
                 ]
 
     toTerm (OrderBy spec s) = do
@@ -546,12 +550,17 @@ instance Term (Exp a) where
         spec' <- mapM toTerm spec
         simpleTerm 41 ([s'] ++ spec')
 
+    toTerm (OrderByIndexed spec s) = do
+        s'    <- toTerm s
+        spec' <- toTerm spec
+        termWithOptions 41 [s'] $ HMS.singleton "index" spec'
+
     toTerm (InsertObject crs table obj) =
         termWithOptions 56 [SomeExp table, SomeExp (lift obj)] $
-            HMS.singleton "conflict" (toDatum crs)
+            HMS.singleton "conflict" (toJSON $ toDatum crs)
 
     toTerm (InsertSequence table s) =
-        termWithOptions 56 [SomeExp table, SomeExp s] emptyOptions
+        termWithOptions 56 [SomeExp table, SomeExp s] HMS.empty
 
     toTerm (Delete selection) =
         simpleTerm 54 [SomeExp selection]
@@ -597,7 +606,7 @@ instance Term (Exp a) where
 
     toTerm (GetAllIndexed table keys index) =
         termWithOptions 78 ([SomeExp table] ++ map SomeExp keys)
-            (HMS.singleton "index" (String index))
+            (HMS.singleton "index" (toJSON $ String index))
 
     toTerm (Take n s) =
         simpleTerm 71 [SomeExp s, SomeExp n]
@@ -644,7 +653,7 @@ instance Term (Exp a) where
 
     toTerm (RandomFloat lo hi) =
         termWithOptions 151 [SomeExp lo, SomeExp hi] $
-            HMS.singleton "float" (Bool True)
+            HMS.singleton "float" (toJSON $ Bool True)
 
     toTerm (Info a) =
         simpleTerm 79 [SomeExp a]
@@ -664,12 +673,10 @@ simpleTerm termType args = do
     args' <- mapM toTerm args
     pure $ A.Array $ V.fromList [toJSON termType, toJSON args']
 
-termWithOptions :: (Term a) => Int -> [a] -> Object -> State Context A.Value
+termWithOptions :: (Term a) => Int -> [a] -> HashMap Text Value -> State Context A.Value
 termWithOptions termType args options = do
-    args'    <- mapM toTerm args
-    options' <- toTerm options
-
-    pure $ A.Array $ V.fromList [toJSON termType, toJSON args', toJSON options']
+    args' <- mapM toTerm args
+    pure $ A.Array $ V.fromList [toJSON termType, toJSON args', toJSON options]
 
 
 -- | Convenience to for automatically converting a 'Text' to a constant
