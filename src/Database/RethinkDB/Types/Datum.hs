@@ -180,6 +180,34 @@ instance FromDatum () where
 
 
 ------------------------------------------------------------------------------
+-- (a,b)
+
+instance (ToDatum a, ToDatum b) => ToDatum (a,b) where
+    toDatum (a,b) = Array $ V.fromList [toDatum a, toDatum b]
+
+instance (FromDatum a, FromDatum b) => FromDatum (a,b) where
+    parseDatum (Array x) = case V.toList x of
+        [a,b] -> (,) <$> parseDatum a <*> parseDatum b
+        _     -> fail "(a,b)"
+    parseDatum _         = fail "(a,b)"
+
+
+
+------------------------------------------------------------------------------
+-- (a,b,c)
+
+instance (ToDatum a, ToDatum b, ToDatum c) => ToDatum (a,b,c) where
+    toDatum (a,b,c) = Array $ V.fromList [toDatum a, toDatum b, toDatum c]
+
+instance (FromDatum a, FromDatum b, FromDatum c) => FromDatum (a,b,c) where
+    parseDatum (Array x) = case V.toList x of
+        [a,b,c] -> (,,) <$> parseDatum a <*> parseDatum b <*> parseDatum c
+        _       -> fail "(a,b,c)"
+    parseDatum _         = fail "(a,b,c)"
+
+
+
+------------------------------------------------------------------------------
 -- Bool
 
 instance ToDatum Bool where
