@@ -35,7 +35,7 @@ library
 
     build-depends     : base < 4.8
                       , aeson
-                      , binary     >= 0.7.2.1
+                      , binary
                       , bytestring
                       , hashable
                       , mtl
