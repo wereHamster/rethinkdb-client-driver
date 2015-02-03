@@ -33,22 +33,22 @@ import           Data.Time.Clock.POSIX
 instance Monad m => Serial m Datum
 
 instance Monad m => Serial m UTCTime where
-    series = decDepth $ fromInt <$> series
+    series = cons1 fromInt
       where
         fromInt :: Int -> UTCTime
         fromInt = posixSecondsToUTCTime . fromIntegral
 
 instance Monad m => Serial m ZonedTime where
-    series = decDepth $ utcToZonedTime utc <$> series
+    series = cons1 (utcToZonedTime utc)
 
 instance Monad m => Serial m Text where
-    series = decDepth $ T.pack <$> series
+    series = cons1 T.pack
 
 instance Monad m => Serial m (HashMap Text Datum) where
-    series = decDepth $ HMS.fromList <$> series
+    series = cons1 HMS.fromList
 
 instance (Monad m, Serial m a) => Serial m (Vector a) where
-    series = decDepth $ V.fromList <$> series
+    series = cons1 V.fromList
 
 
 
