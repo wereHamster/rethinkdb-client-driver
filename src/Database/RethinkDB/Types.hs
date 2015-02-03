@@ -378,7 +378,7 @@ data Exp a where
     Not            :: Exp Bool -> Exp Bool
 
     Match :: Exp Text -> Exp Text -> Exp Datum
-    -- ^ First arg is the string, second a regular expression.
+    -- First arg is the string, second a regular expression.
 
     Get            :: Exp Table -> Exp Text -> Exp SingleSelection
     GetAll         :: (IsDatum a) => Exp Table -> [Exp a] -> Exp (Array Datum)
@@ -442,38 +442,38 @@ data Exp a where
     -- arguments as there are provided.
 
     Limit :: (IsSequence s) => Double -> Exp s -> Exp s
-    -- ^ Limit the number of items in the sequence.
+    -- Limit the number of items in the sequence.
 
     Nth :: (IsSequence s, IsDatum r) => Double -> Exp s -> Exp r
-    -- ^ Return the n-th element in the sequence.
+    -- Return the n-th element in the sequence.
 
     UUID :: Exp Text
-    -- ^ An expression which when evaluated will generate a fresh UUID (in its
+    -- An expression which when evaluated will generate a fresh UUID (in its
     -- standard string encoding).
 
     Now :: Exp ZonedTime
-    -- ^ The time when the query was received by the server.
+    -- The time when the query was received by the server.
 
     Timezone :: Exp ZonedTime -> Exp Text
-    -- ^ The timezone in which the given time is.
+    -- The timezone in which the given time is.
 
     RandomInteger :: Exp Int -> Exp Int -> Exp Int
-    -- ^ Takes a lower and upper bound and returns a random integer between
+    -- Takes a lower and upper bound and returns a random integer between
     -- the two. Note that the lower bound is closed, the upper bound is open,
     -- ie: [min, max)
 
     RandomFloat :: Exp Double -> Exp Double -> Exp Double
-    -- ^ Same as 'RandomInteger' but uses floating-point numbers.
+    -- Same as 'RandomInteger' but uses floating-point numbers.
 
     Info :: Exp a -> Exp Object
-    -- ^ Gets info about anything.
+    -- Gets info about anything.
 
     Default :: Exp a -> Exp a -> Exp a
-    -- ^ Evaluate the first argument. If it throws an error then the second
+    -- Evaluate the first argument. If it throws an error then the second
     -- argument is returned.
 
     Error :: Exp Text -> Exp a
-    -- ^ Throw an error with the given message.
+    -- Throw an error with the given message.
 
 
 instance Term (Exp a) where
