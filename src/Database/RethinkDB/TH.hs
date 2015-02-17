@@ -877,5 +877,4 @@ valueConName (Time   _) = "Time"
 valueConName Null       = "Null"
 
 applyCon :: Name -> [Name] -> Q [Pred]
-applyCon con typeNames = return (map apply typeNames)
-  where apply t = ClassP con [VarT t]
+applyCon con = mapM $ \t -> classP con [varT t]

@@ -15,7 +15,6 @@ import           Control.Monad
 import           Data.Text           (Text)
 import           Data.Time
 import           Data.Scientific
-import           System.Locale       (defaultTimeLocale)
 import           Data.Time.Clock.POSIX
 
 import           Data.Aeson          (FromJSON(..), ToJSON(..))
@@ -121,7 +120,7 @@ zonedTimeParser o = do
     -- Parse the timezone using 'parseTime'. This overapproximates the
     -- possible responses from the server, but better than rolling our
     -- own timezone parser.
-    tz <- o A..: "timezone" >>= \tz -> case parseTime defaultTimeLocale "%Z" tz of
+    tz <- o A..: "timezone" >>= \tz -> case parseTimeM True defaultTimeLocale "%Z" tz of
         Just d -> pure d
         _      -> fail "Could not parse TimeZone"
 
