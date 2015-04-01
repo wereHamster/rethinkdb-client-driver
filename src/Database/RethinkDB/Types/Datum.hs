@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -28,6 +29,9 @@ import qualified Data.HashMap.Strict as HMS
 
 import           GHC.Generics
 
+#if !MIN_VERSION_time(1,5,0)
+import           System.Locale (defaultTimeLocale)
+#endif
 
 
 ------------------------------------------------------------------------------
@@ -126,6 +130,10 @@ zonedTimeParser o = do
 
     t <- o A..: "epoch_time" :: Parser Double
     pure $ utcToZonedTime tz $ posixSecondsToUTCTime $ realToFrac t
+#if !MIN_VERSION_time(1,5,0)
+  where
+    parseTimeM _ = parseTime
+#endif
 
 
 
