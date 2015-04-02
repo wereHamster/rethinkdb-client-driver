@@ -1,10 +1,10 @@
 {-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Database.RethinkDB.Types where
 
@@ -125,6 +125,13 @@ instance Term Double where
 
 
 instance FromResponse Int where
+    parseResponse = responseAtomParser
+
+
+instance FromResponse Char where
+    parseResponse = responseAtomParser
+
+instance FromResponse [Char] where
     parseResponse = responseAtomParser
 
 
@@ -723,6 +730,14 @@ instance Lift Exp Double where
     type Simplified Double = Double
     lift = Constant
 
+instance Lift Exp Char where
+    type Simplified Char = Char
+    lift = Constant
+
+instance Lift Exp String where
+    type Simplified String = String
+    lift = Constant
+
 instance Lift Exp Text where
     type Simplified Text = Text
     lift = Constant
@@ -800,6 +815,8 @@ type family Result a
 type instance Result Text            = Text
 type instance Result Double          = Double
 type instance Result Int             = Int
+type instance Result Char            = Char
+type instance Result String          = String
 type instance Result Bool            = Bool
 type instance Result ZonedTime       = ZonedTime
 

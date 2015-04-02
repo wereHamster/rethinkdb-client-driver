@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                   #-}
+{-# LANGUAGE OverlappingInstances  #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -14,6 +15,7 @@ import           Control.Applicative
 import           Control.Monad
 
 import           Data.Text           (Text)
+import qualified Data.Text           as T
 import           Data.Time
 import           Data.Scientific
 import           Data.Time.Clock.POSIX
@@ -259,6 +261,33 @@ instance ToDatum Int where
 instance FromDatum Int where
     parseDatum (Number x) = pure $ floor x
     parseDatum _          = fail "Int"
+
+
+
+------------------------------------------------------------------------------
+-- Char
+
+instance ToDatum Char where
+    toDatum = String . T.singleton
+
+instance FromDatum Char where
+    parseDatum (String x) =
+        if T.compareLength x 1 == EQ
+            then pure $ T.head x
+            else fail "Expected a string of length 1"
+    parseDatum _ = fail "Char"
+
+
+
+------------------------------------------------------------------------------
+-- [Char] (aka String)
+
+instance ToDatum [Char] where
+    toDatum = String . T.pack
+
+instance FromDatum [Char] where
+    parseDatum (String x) = pure $ T.unpack x
+    parseDatum _          = fail "String"
 
 
 

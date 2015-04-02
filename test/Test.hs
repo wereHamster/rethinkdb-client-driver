@@ -74,6 +74,10 @@ spec h = do
     -- and the server responds with what the driver expects.
     describe "roundtrips" $ do
         describe "primitive values" $ do
+            it "Char" $ property $ \(x :: Char) ->
+                monadic $ ((Right x)==) <$> run h (lift x)
+            it "String" $ property $ \(x :: String) ->
+                monadic $ ((Right x)==) <$> run h (lift x)
             it "Double" $ property $ \(x :: Double) ->
                 monadic $ ((Right x)==) <$> run h (lift x)
             it "Text" $ property $ \(x :: Text) ->
