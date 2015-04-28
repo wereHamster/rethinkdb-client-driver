@@ -143,3 +143,7 @@ spec h = do
 
             res <- run h $ call1 (3*) (lift a)
             return $ res == (Right $ a * 3)
+
+    describe "lifts" $ do
+        it "[Exp a]" $ property $ \(xs :: [Datum]) -> monadic $ do
+            expectSuccess h (lift (map lift xs :: [Exp Datum])) (V.fromList xs)

@@ -346,6 +346,11 @@ data Exp a where
     -- their values into constants.
 
 
+    MkArray :: [Exp a] -> Exp (Array a)
+    -- Create an array from a list of expressions. This is an internal function,
+    -- you should use 'lift' instead.
+
+
     --------------------------------------------------------------------------
     -- Database administration
 
@@ -367,7 +372,7 @@ data Exp a where
 
     ListIndices    :: Exp Table -> Exp (Array Text)
 
-    CreateIndex    :: Exp Table -> Exp Text -> (Exp Object -> Exp Datum) -> Exp Object
+    CreateIndex    :: (IsDatum a) => Exp Table -> Exp Text -> (Exp Object -> Exp a) -> Exp Object
     -- Create a new secondary index on the table. The index has a name and a
     -- projection function which is applied to every object which is added to the table.
 
@@ -486,6 +491,9 @@ data Exp a where
 instance Term (Exp a) where
     toTerm (Constant datum) =
         toTerm $ toDatum datum
+
+    toTerm (MkArray xs) =
+        simpleTerm 2 (map SomeExp xs)
 
 
     toTerm ListDatabases =
@@ -761,6 +769,10 @@ instance Lift Exp UTCTime where
 instance Lift Exp (Array Datum) where
     type Simplified (Array Datum) = (Array Datum)
     lift = Constant
+
+instance Lift Exp [Exp a] where
+    type Simplified [Exp a] = Array a
+    lift = MkArray
 
 instance Lift Exp (Exp a -> Exp r) where
     type Simplified (Exp a -> Exp r) = Exp r
