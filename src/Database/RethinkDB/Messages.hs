@@ -26,6 +26,8 @@ import           Network.Socket.ByteString.Lazy (sendAll)
 
 import           Database.RethinkDB.Types
 
+import           Prelude
+
 
 
 createSocket :: Text -> Int -> IO Socket

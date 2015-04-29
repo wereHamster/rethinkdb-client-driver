@@ -29,6 +29,8 @@ import qualified Data.HashMap.Strict as HMS
 
 import           Database.RethinkDB.Types.Datum
 
+import           Prelude
+
 
 
 ------------------------------------------------------------------------------
@@ -399,6 +401,7 @@ data Exp a where
     GetAllIndexed  :: (IsDatum a) => Exp Table -> [Exp a] -> Text -> Exp (Sequence Datum)
 
     Add            :: (Num a) => [Exp a] -> Exp a
+    Sub            :: (Num a) => [Exp a] -> Exp a
     Multiply       :: (Num a) => [Exp a] -> Exp a
 
     All :: [Exp Bool] -> Exp Bool
@@ -599,6 +602,9 @@ instance Term (Exp a) where
 
     toTerm (Add values) =
         simpleTerm 24 (map SomeExp values)
+
+    toTerm (Sub values) =
+        simpleTerm 25 (map SomeExp values)
 
     toTerm (Multiply values) =
         simpleTerm 26 (map SomeExp values)
