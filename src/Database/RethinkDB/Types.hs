@@ -357,6 +357,7 @@ data Exp a where
     ListDatabases  :: Exp (Array Text)
     CreateDatabase :: Exp Text -> Exp Object
     DropDatabase   :: Exp Text -> Exp Object
+    WaitDatabase   :: Exp Database -> Exp Object
 
 
     --------------------------------------------------------------------------
@@ -365,6 +366,7 @@ data Exp a where
     ListTables     :: Exp Database -> Exp (Array Text)
     CreateTable    :: Exp Database -> Exp Text -> Exp Object
     DropTable      :: Exp Database -> Exp Text -> Exp Object
+    WaitTable      :: Exp Table -> Exp Object
 
 
     --------------------------------------------------------------------------
@@ -505,6 +507,9 @@ instance Term (Exp a) where
     toTerm (DropDatabase name) =
         simpleTerm 58 [SomeExp name]
 
+    toTerm (WaitDatabase db) =
+        simpleTerm 177 [SomeExp db]
+
 
     toTerm (ListTables db) =
         simpleTerm 62 [SomeExp db]
@@ -514,6 +519,9 @@ instance Term (Exp a) where
 
     toTerm (DropTable db name) =
         simpleTerm 61 [SomeExp db, SomeExp name]
+
+    toTerm (WaitTable table) =
+        simpleTerm 177 [SomeExp table]
 
 
     toTerm (ListIndices table) =
