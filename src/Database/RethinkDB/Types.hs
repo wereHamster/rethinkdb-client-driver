@@ -380,7 +380,7 @@ data Exp a where
 
     DropIndex      :: Exp Table -> Exp Text -> Exp Object
     IndexStatus    :: Exp Table -> [Exp Text] -> Exp (Array Object)
-    WaitIndex      :: Exp Table -> [Exp Text] -> Exp Object
+    WaitIndex      :: Exp Table -> [Exp Text] -> Exp (Array Object)
 
 
     Database       :: Exp Text -> Exp Database
