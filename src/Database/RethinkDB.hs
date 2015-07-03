@@ -3,7 +3,7 @@
 
 module Database.RethinkDB
     ( Handle
-    , defaultPort, newHandle, close
+    , defaultPort, newHandle, handleDatabase, close
     , run, nextChunk, collect, stop, wait
 
     , Error(..)
@@ -76,6 +76,12 @@ newHandle host port mbAuth db = do
     ref <- newIORef 1
 
     return $ Handle sock ref db
+
+
+-- | The 'Database' which some expressions will use when not explicitly given
+-- one (eg. 'Table').
+handleDatabase :: Handle -> Exp Database
+handleDatabase = hDatabase
 
 
 -- | Close the given handle. You MUST NOT use the handle after this.
