@@ -437,10 +437,10 @@ data Exp a where
     BetweenIndexed :: (IsSequence s) => Text -> (Bound, Bound) -> Exp s -> Exp s
     -- Select all elements whose secondary index is between the two bounds.
 
-    OrderBy :: (IsSequence s) => [Order] -> Exp s -> Exp (Array Datum)
+    OrderBy :: (IsSequence s) => [Order] -> Exp s -> Exp s
     -- Order a sequence based on the given order specificiation.
 
-    OrderByIndexed :: (IsSequence s) => Order -> Exp s -> Exp (Array Datum)
+    OrderByIndexed :: (IsSequence s) => Order -> Exp s -> Exp s
     -- Like OrderBy but uses a secondary index instead of a object field.
 
     Keys :: (IsObject a) => Exp a -> Exp (Array Text)
