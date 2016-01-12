@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP                   #-}
-{-# LANGUAGE OverlappingInstances  #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -281,11 +280,14 @@ instance FromDatum Char where
 
 ------------------------------------------------------------------------------
 -- [Char] (aka String)
+--
+-- This instance overlaps the more generic 'FromDatum a => FromDatum [a]', hence
+-- the need for the OVERLAPPING pragma.
 
-instance ToDatum [Char] where
+instance {-# OVERLAPPING #-} ToDatum [Char] where
     toDatum = String . T.pack
 
-instance FromDatum [Char] where
+instance {-# OVERLAPPING #-} FromDatum [Char] where
     parseDatum (String x) = pure $ T.unpack x
     parseDatum _          = fail "String"
 
