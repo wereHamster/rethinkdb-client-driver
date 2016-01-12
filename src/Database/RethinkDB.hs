@@ -4,7 +4,7 @@
 module Database.RethinkDB
     ( Handle
     , defaultPort, newHandle, handleDatabase, close
-    , run, nextChunk, collect, stop, wait
+    , run, nextChunk, collect, stop, wait, serverInfo
 
     , Error(..)
 
@@ -178,6 +178,16 @@ wait handle token = sendMessage
     (hSocket handle)
     (queryMessage token $ singleElementArray 4)
 
+
+
+serverInfo :: Handle -> IO (Either Error ServerInfo)
+serverInfo handle = do
+    token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
+    sendMessage (hSocket handle) (queryMessage token $ singleElementArray 5)
+    reply <- getResponse handle
+    case reply of
+        Left e -> return $ Left e
+        Right res -> return $ parseMessage parseResponse res Right
 
 
 -- | Get the next chunk of a sequence. It is an error to request the next chunk

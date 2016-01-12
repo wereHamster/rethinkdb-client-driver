@@ -904,7 +904,8 @@ type Token = Word64
 
 
 data ResponseType
-    = SuccessAtom | SuccessSequence | SuccessPartial | SuccessFeed
+    = SuccessAtom | SuccessSequence | SuccessPartial
+    | RTServerInfo
     | WaitComplete
     | ClientErrorType | CompileErrorType | RuntimeErrorType
     deriving (Show, Eq)
@@ -915,7 +916,7 @@ instance FromJSON ResponseType where
     parseJSON (A.Number  2) = pure SuccessSequence
     parseJSON (A.Number  3) = pure SuccessPartial
     parseJSON (A.Number  4) = pure WaitComplete
-    parseJSON (A.Number  5) = pure SuccessFeed
+    parseJSON (A.Number  5) = pure RTServerInfo
     parseJSON (A.Number 16) = pure ClientErrorType
     parseJSON (A.Number 17) = pure CompileErrorType
     parseJSON (A.Number 18) = pure RuntimeErrorType
@@ -968,3 +969,23 @@ data Error
       -- booleans rather than numbers.
 
     deriving (Eq, Show)
+
+
+
+--------------------------------------------------------------------------------
+-- ServerInfo
+
+data ServerInfo = ServerInfo
+    { siId :: !Text
+      -- ^ This appears to be a UUID, but I don't want to add a dependency just
+      -- for this one field.
+
+    , siName :: !Text
+    } deriving (Show)
+
+instance FromResponse ServerInfo where
+    parseResponse r = case (responseType r, V.toList (responseResult r)) of
+        (RTServerInfo, [a]) -> parseWire a >>= \datum -> case datum of
+            (Object o) -> ServerInfo <$> o .: "id" <*> o .: "name"
+            _          -> fail "ServerInfo"
+        _ -> fail $ "ServerInfo: Bad response" ++ show (responseResult r)
