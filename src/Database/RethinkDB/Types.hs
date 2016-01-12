@@ -26,6 +26,8 @@ import           Data.Vector         (Vector)
 import qualified Data.Vector         as V
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMS
+import           Data.Set            (Set)
+import qualified Data.Set            as S
 
 import           Database.RethinkDB.Types.Datum
 
@@ -904,10 +906,14 @@ type Token = Word64
 
 
 data ResponseType
-    = SuccessAtom | SuccessSequence | SuccessPartial
-    | RTServerInfo
+    = SuccessAtom
+    | SuccessSequence
+    | SuccessPartial
     | WaitComplete
-    | ClientErrorType | CompileErrorType | RuntimeErrorType
+    | RTServerInfo
+    | ClientErrorType
+    | CompileErrorType
+    | RuntimeErrorType
     deriving (Show, Eq)
 
 
@@ -920,7 +926,24 @@ instance FromJSON ResponseType where
     parseJSON (A.Number 16) = pure ClientErrorType
     parseJSON (A.Number 17) = pure CompileErrorType
     parseJSON (A.Number 18) = pure RuntimeErrorType
-    parseJSON _           = fail "ResponseType"
+    parseJSON _             = fail "ResponseType"
+
+
+data ResponseNote
+    = SequenceFeed
+    | AtomFeed
+    | OrderByLimitFeed
+    | UnionedFeed
+    | IncludesStates
+    deriving (Show, Eq, Ord)
+
+instance FromJSON ResponseNote where
+    parseJSON (A.Number 1) = pure SequenceFeed
+    parseJSON (A.Number 2) = pure AtomFeed
+    parseJSON (A.Number 3) = pure OrderByLimitFeed
+    parseJSON (A.Number 4) = pure UnionedFeed
+    parseJSON (A.Number 5) = pure IncludesStates
+    parseJSON _            = fail "ResponseNote"
 
 
 
@@ -928,6 +951,7 @@ data Response = Response
     { responseToken     :: !Token
     , responseType      :: !ResponseType
     , responseResult    :: !(Vector Value)
+    , responseNotes     :: !(Set ResponseNote)
     --, responseBacktrace :: ()
     --, responseProfile   :: ()
     } deriving (Show, Eq)
@@ -935,10 +959,13 @@ data Response = Response
 
 
 responseParser :: Token -> Value -> Parser Response
-responseParser token (A.Object o) =
-    Response <$> pure token <*> o A..: "t" <*> o A..: "r"
-responseParser _     _          =
-    fail "Response: Unexpected JSON value"
+responseParser token (A.Object o) = Response
+    <$> pure token
+    <*> o A..: "t"
+    <*> o A..: "r"
+    <*> (S.fromList <$> o A..:? "n" A..!= [])
+responseParser _ _ =
+    fail "responseParser: Unexpected JSON value"
 
 
 

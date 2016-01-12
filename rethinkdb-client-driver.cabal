@@ -37,6 +37,7 @@ library
                       , aeson
                       , binary >= 0.6.0.0
                       , bytestring
+                      , containers
                       , hashable
                       , mtl
                       , network
