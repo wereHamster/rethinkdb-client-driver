@@ -11,7 +11,8 @@ import qualified Data.Text.Encoding   as T
 import           Data.Aeson           as A hiding (Result, Object)
 import           Data.Aeson.Types     as A hiding (Result, Object)
 
-import           Data.ByteString.Lazy (toStrict)
+import qualified Data.ByteString      as SBS
+import           Data.ByteString.Lazy (ByteString, toStrict)
 import qualified Data.ByteString.Lazy as BS
 
 import           Data.Binary
@@ -44,7 +45,7 @@ closeSocket :: Socket -> IO ()
 closeSocket = close
 
 
-sendMessage :: Socket -> BS.ByteString -> IO ()
+sendMessage :: Socket -> ByteString -> IO ()
 sendMessage sock buf = sendAll sock buf
 
 
@@ -59,15 +60,16 @@ recvMessage sock parser = go (runGetIncremental parser)
 
 
 
-handshakeMessage :: Maybe Text -> BS.ByteString
+handshakeMessage :: Maybe Text -> ByteString
 handshakeMessage mbAuth = runPut $ do
     -- Protocol version: V0_3
     putWord32le 0x5f75e83e
 
     -- Authentication
     flip (maybe (putWord32le 0)) mbAuth $ \auth -> do
-        putWord32le   $ fromIntegral $ T.length auth
-        putByteString $ T.encodeUtf8 auth
+        let key = T.encodeUtf8 auth
+        putWord32le   $ fromIntegral $ SBS.length key
+        putByteString $ key
 
     -- Protocol type: JSON
     putWord32le 0x7e6970c7
@@ -78,7 +80,7 @@ handshakeReplyParser = do
     (T.decodeUtf8 . toStrict) <$> getLazyByteStringNul
 
 
-queryMessage :: Token -> A.Value -> BS.ByteString
+queryMessage :: Token -> A.Value -> ByteString
 queryMessage token msg = runPut $ do
     putWord64host     token
     putWord32le       (fromIntegral $ BS.length buf)
