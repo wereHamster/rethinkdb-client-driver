@@ -4,9 +4,9 @@
 module Database.RethinkDB
     ( Handle
     , defaultPort, newHandle, handleDatabase, close
-    , run, nextChunk, collect, stop, wait, serverInfo
+    , run, nextChunk, collect, continue, stop, wait, serverInfo
 
-    , Error(..)
+    , Error(..), Response(..), ChangeNotification(..)
 
       -- * The Datum type
     , Datum(..), Array, Object, ToDatum(..), FromDatum(..)
@@ -15,7 +15,7 @@ module Database.RethinkDB
       -- The Exp type
     , Exp(..), SomeExp(..)
     , Bound(..), Order(..)
-    , Sequence
+    , Sequence(..)
     , Table, Database, SingleSelection
     , Res, Result, FromResponse
     , ConflictResolutionStrategy(..)

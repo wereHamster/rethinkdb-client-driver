@@ -494,6 +494,12 @@ data Exp a where
     Error :: Exp Text -> Exp a
     -- Throw an error with the given message.
 
+    SequenceChanges :: (IsSequence s) => Exp s -> Exp (Sequence ChangeNotification)
+    -- An infinite stream of change notifications of a seqence.
+
+    SingleSelectionChanges :: (IsDatum a) => Exp a -> Exp (Sequence ChangeNotification)
+    -- Same as 'SequenceChanges' but
+
 
 instance Term (Exp a) where
     toTerm (Constant datum) =
@@ -694,6 +700,12 @@ instance Term (Exp a) where
 
     toTerm (Error message) =
         simpleTerm 12 [SomeExp message]
+
+    toTerm (SequenceChanges stream) =
+        simpleTerm 152 [SomeExp stream]
+
+    toTerm (SingleSelectionChanges stream) =
+        simpleTerm 152 [SomeExp stream]
 
 
 noargTerm :: Int -> State Context A.Value
@@ -1016,3 +1028,17 @@ instance FromResponse ServerInfo where
             (Object o) -> ServerInfo <$> o .: "id" <*> o .: "name"
             _          -> fail "ServerInfo"
         _ -> fail $ "ServerInfo: Bad response" ++ show (responseResult r)
+
+
+
+--------------------------------------------------------------------------------
+-- ChangeNotification
+
+data ChangeNotification = ChangeNotification
+    { cnOldValue :: !Datum
+    , cnNewValue :: !Datum
+    } deriving (Show)
+
+instance FromDatum ChangeNotification where
+    parseDatum (Object o) = ChangeNotification <$> o .: "old_val" <*> o .: "new_val"
+    parseDatum _          = fail "ChangeNotification"
