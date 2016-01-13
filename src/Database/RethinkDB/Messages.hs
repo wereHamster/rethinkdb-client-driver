@@ -66,10 +66,12 @@ handshakeMessage mbAuth = runPut $ do
     putWord32le 0x400c2d20
 
     -- Authentication
-    flip (maybe (putWord32le 0)) mbAuth $ \auth -> do
-        let key = T.encodeUtf8 auth
-        putWord32le   $ fromIntegral $ SBS.length key
-        putByteString $ key
+    case mbAuth of
+        Nothing -> putWord32le 0
+        Just auth -> do
+            let key = T.encodeUtf8 auth
+            putWord32le $ fromIntegral $ SBS.length key
+            putByteString key
 
     -- Protocol type: JSON
     putWord32le 0x7e6970c7
