@@ -43,6 +43,7 @@ library
                       , network
                       , old-locale
                       , scientific
+                      , stm
                       , template-haskell
                       , text
                       , time >= 1.4

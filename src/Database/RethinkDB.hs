@@ -4,7 +4,8 @@
 module Database.RethinkDB
     ( Handle
     , defaultPort, newHandle, handleDatabase, close
-    , run, nextChunk, collect, continue, stop, wait, serverInfo
+    , run, start, nextChunk, collect, continue, stop, wait, serverInfo
+    , nextResult
 
     , Error(..), Response(..), ChangeNotification(..)
 
@@ -27,7 +28,9 @@ module Database.RethinkDB
     ) where
 
 
-import           Control.Concurrent.MVar
+import           Control.Monad
+import           Control.Concurrent
+import           Control.Concurrent.STM
 
 import           Data.Monoid      ((<>))
 
@@ -36,10 +39,18 @@ import qualified Data.Text        as T
 
 import           Data.Vector      (Vector)
 import qualified Data.Vector      as V
+
+import           Data.Map.Strict  (Map)
+import qualified Data.Map.Strict  as M
+
 import qualified Data.Aeson.Types as A
 
-import           Network.Socket   (Socket)
+import           Data.Sequence    (Seq, ViewR(..))
+import qualified Data.Sequence    as S
+
 import           Data.IORef
+
+import           Network.Socket   (Socket)
 
 import           Database.RethinkDB.Types
 import           Database.RethinkDB.Types.Datum
@@ -66,6 +77,14 @@ data Handle = Handle
       -- RethinkDB seems to expect the token to never be zero. So we need to
       -- start with one and then count up.
 
+    , hResponses :: !(TVar (Map Token (Seq Response)))
+      -- ^ Responses to queries. A thread reads the responses from the socket
+      -- and pushes them into the queues.
+
+    , hReader :: !ThreadId
+      -- ^ Thread which reads from the socket and copies responses into the
+      -- queues in 'hResponses'.
+
     , hDatabase :: !(Exp Database)
       -- ^ The database which should be used when the 'Table' expression
       -- doesn't specify one.
@@ -87,9 +106,22 @@ newHandle host port mbAuth db = do
     sendMessage sock (handshakeMessage mbAuth)
     _reply <- recvMessage sock handshakeReplyParser
 
+    responses <- newTVarIO M.empty
+
+    readerThreadId <- forkIO $ forever $ do
+        res <- recvMessage sock responseMessageParser
+        case res of
+            Left e -> putStrLn $ show e
+            Right r -> atomically $ modifyTVar' responses $
+                M.insertWith mappend (responseToken r) (S.singleton r)
+
+        return ()
+
     Handle
         <$> newMVar sock
         <*> newIORef 1
+        <*> pure responses
+        <*> pure readerThreadId
         <*> pure db
 
 
@@ -101,24 +133,29 @@ handleDatabase = hDatabase
 
 -- | Close the given handle. You MUST NOT use the handle after this.
 close :: Handle -> IO ()
-close handle = withMVar (hSocket handle) closeSocket
+close handle = do
+    withMVar (hSocket handle) closeSocket
+    killThread (hReader handle)
 
 
 -- | Start a new query and wait for its (first) result. If the result is an
--- single value ('Datum'), then three will be no further results. If it is
+-- single value ('Datum'), then there will be no further results. If it is
 -- a sequence, then you must consume results until the sequence ends.
 run :: (FromResponse (Result a)) => Handle -> Exp a -> IO (Res a)
 run handle expr = do
-    _token <- start handle expr
-    reply <- getResponse handle
+    token <- start handle expr
+    nextResult handle token
 
-    case reply of
-        Left e -> return $ Left e
-        Right response -> case responseType response of
-            ClientErrorType  -> mkError response ClientError
-            CompileErrorType -> mkError response CompileError
-            RuntimeErrorType -> mkError response RuntimeError
-            _                -> return $ parseMessage parseResponse response Right
+
+responseToRes :: (FromResponse b) => Either Error Response -> IO (Either Error b)
+responseToRes reply = case reply of
+    Left e -> return $ Left e
+    Right response -> case responseType response of
+        ClientErrorType  -> mkError response ClientError
+        CompileErrorType -> mkError response CompileError
+        RuntimeErrorType -> mkError response RuntimeError
+        _                -> return $ parseMessage parseResponse response Right
+
 
 parseMessage :: (a -> A.Parser b) -> a -> (b -> Either Error c) -> Either Error c
 parseMessage parser value f = case A.parseEither parser value of
@@ -197,10 +234,7 @@ serverInfo handle = do
     token <- atomicModifyIORef' (hTokenRef handle) (\x -> (x + 1, x))
     withMVar (hSocket handle) $ \socket ->
         sendMessage socket (queryMessage token $ singleElementArray 5)
-    reply <- getResponse handle
-    case reply of
-        Left e -> return $ Left e
-        Right res -> return $ parseMessage parseResponse res Right
+    nextResult handle token
 
 
 -- | Get the next chunk of a sequence. It is an error to request the next chunk
@@ -210,12 +244,23 @@ nextChunk :: (FromResponse (Sequence a))
 nextChunk _      (Done          _) = return $ Left $ ProtocolError ""
 nextChunk handle (Partial token _) = do
     continue handle token
-    reply <- getResponse handle
-    case reply of
-        Left e -> return $ Left e
-        Right response -> return $ parseMessage parseResponse response Right
+    nextResult handle token
 
 
-getResponse :: Handle -> IO (Either Error Response)
-getResponse handle = withMVar (hSocket handle) $ \socket ->
-    recvMessage socket responseMessageParser
+-- | This function blocks until there is a response ready for the query with
+-- the given token. It may block indefinitely if the token refers to a query
+-- which has already finished or does not exist yet!
+responseForToken :: Handle -> Token -> IO Response
+responseForToken h token = atomically $ do
+    m <- readTVar (hResponses h)
+    case M.lookup token m of
+        Nothing -> retry
+        Just s -> case S.viewr s of
+            EmptyR -> retry
+            _ :> a -> pure a
+
+
+nextResult :: (FromResponse a) => Handle -> Token -> IO (Either Error a)
+nextResult h token = do
+    response <- responseForToken h token
+    responseToRes (Right response)

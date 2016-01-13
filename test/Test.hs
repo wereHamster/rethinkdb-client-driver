@@ -56,6 +56,11 @@ instance (Monad m, Serial m a) => Serial m (Vector a) where
 main :: IO ()
 main = do
     h <- newHandle "localhost" defaultPort Nothing (Database "test")
+
+    si <- serverInfo h
+    putStrLn "Server Info:"
+    print si
+
     hspec $ spec h
 
 
@@ -147,3 +152,12 @@ spec h = do
     describe "lifts" $ do
         it "[Exp a]" $ property $ \(xs :: [Datum]) -> monadic $ do
             expectSuccess h (lift (map lift xs :: [Exp Datum])) (V.fromList xs)
+
+    describe "concurrent queries" $ do
+        it "should read all responses from the socket" $ property $ \(a :: Double) -> monadic $ do
+            token1 <- start h $ call2 (+) (lift a) (lift a)
+            token2 <- start h $ call2 (*) (lift a) (lift a)
+            Right res2 <- nextResult h token2
+            Right res1 <- nextResult h token1
+
+            return $ res1 == a+a && res2 == a*a
