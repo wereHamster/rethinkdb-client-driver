@@ -3,9 +3,13 @@
 
 module Database.RethinkDB
     ( Handle
-    , defaultPort, newHandle, handleDatabase, close
-    , run, start, nextChunk, collect, continue, stop, wait, serverInfo
-    , nextResult
+    , defaultPort, newHandle, handleDatabase, close, serverInfo
+
+      -- * High-level query API
+    , run, nextChunk, collect
+
+      -- * Low-level query API
+    , start, continue, stop, wait, nextResult
 
     , Error(..), Response(..), ChangeNotification(..)
 
@@ -138,6 +142,25 @@ close handle = do
     killThread (hReader handle)
 
 
+serverInfo :: Handle -> IO (Either Error ServerInfo)
+serverInfo handle = do
+    token <- atomicModifyIORef' (hTokenRef handle) (\x -> (x + 1, x))
+    withMVar (hSocket handle) $ \socket ->
+        sendMessage socket (queryMessage token $ singleElementArray 5)
+    nextResult handle token
+
+
+
+--------------------------------------------------------------------------------
+-- * High-level query API
+--
+-- These are synchronous functions, they make it really easy to run a query and
+-- immediately get its results.
+--
+-- If the result is a sequence, you can either manually iterate through the
+-- chunks ('nextChunk') or fetch the whole sequence at once ('collect').
+
+
 -- | Start a new query and wait for its (first) result. If the result is an
 -- single value ('Datum'), then there will be no further results. If it is
 -- a sequence, then you must consume results until the sequence ends.
@@ -147,26 +170,14 @@ run handle expr = do
     nextResult handle token
 
 
-responseToRes :: (FromResponse b) => Either Error Response -> IO (Either Error b)
-responseToRes reply = case reply of
-    Left e -> return $ Left e
-    Right response -> case responseType response of
-        ClientErrorType  -> mkError response ClientError
-        CompileErrorType -> mkError response CompileError
-        RuntimeErrorType -> mkError response RuntimeError
-        _                -> return $ parseMessage parseResponse response Right
-
-
-parseMessage :: (a -> A.Parser b) -> a -> (b -> Either Error c) -> Either Error c
-parseMessage parser value f = case A.parseEither parser value of
-    Left  e -> Left $ ProtocolError $ T.pack e
-    Right v -> f v
-
-mkError :: Response -> (Text -> Error) -> IO (Either Error a)
-mkError r e = return $ case V.toList (responseResult r) of
-    [a] -> parseMessage A.parseJSON a (Left . e)
-    _   -> Left $ ProtocolError $ "mkError: Could not parse error" <> T.pack (show (responseResult r))
-
+-- | Get the next chunk of a sequence. It is an error to request the next chunk
+-- if the sequence is already 'Done',
+nextChunk :: (FromResponse (Sequence a))
+          => Handle -> Sequence a -> IO (Either Error (Sequence a))
+nextChunk _      (Done          _) = return $ Left $ ProtocolError ""
+nextChunk handle (Partial token _) = do
+    continue handle token
+    nextResult handle token
 
 
 -- | Collect all the values in a sequence and make them available as
@@ -183,6 +194,14 @@ collect handle s@(Partial _ x) = do
                 Left ve -> return $ Left ve
                 Right v -> return $ Right $ x <> v
 
+
+
+--------------------------------------------------------------------------------
+-- * Low-level query API
+--
+-- These functions map almost verbatim to the wire protocol messages. They are
+-- asynchronous, you can send multiple queries and get the corresponding
+-- responses sometime later.
 
 
 -- | Start a new query. Returns the 'Token' which can be used to track its
@@ -229,24 +248,6 @@ wait handle token = withMVar (hSocket handle) $ \socket ->
 
 
 
-serverInfo :: Handle -> IO (Either Error ServerInfo)
-serverInfo handle = do
-    token <- atomicModifyIORef' (hTokenRef handle) (\x -> (x + 1, x))
-    withMVar (hSocket handle) $ \socket ->
-        sendMessage socket (queryMessage token $ singleElementArray 5)
-    nextResult handle token
-
-
--- | Get the next chunk of a sequence. It is an error to request the next chunk
--- if the sequence is already 'Done',
-nextChunk :: (FromResponse (Sequence a))
-          => Handle -> Sequence a -> IO (Either Error (Sequence a))
-nextChunk _      (Done          _) = return $ Left $ ProtocolError ""
-nextChunk handle (Partial token _) = do
-    continue handle token
-    nextResult handle token
-
-
 -- | This function blocks until there is a response ready for the query with
 -- the given token. It may block indefinitely if the token refers to a query
 -- which has already finished or does not exist yet!
@@ -264,3 +265,24 @@ nextResult :: (FromResponse a) => Handle -> Token -> IO (Either Error a)
 nextResult h token = do
     response <- responseForToken h token
     responseToRes (Right response)
+
+
+responseToRes :: (FromResponse b) => Either Error Response -> IO (Either Error b)
+responseToRes reply = case reply of
+    Left e -> return $ Left e
+    Right response -> case responseType response of
+        ClientErrorType  -> mkError response ClientError
+        CompileErrorType -> mkError response CompileError
+        RuntimeErrorType -> mkError response RuntimeError
+        _                -> return $ parseMessage parseResponse response Right
+
+
+parseMessage :: (a -> A.Parser b) -> a -> (b -> Either Error c) -> Either Error c
+parseMessage parser value f = case A.parseEither parser value of
+    Left  e -> Left $ ProtocolError $ T.pack e
+    Right v -> f v
+
+mkError :: Response -> (Text -> Error) -> IO (Either Error a)
+mkError r e = return $ case V.toList (responseResult r) of
+    [a] -> parseMessage A.parseJSON a (Left . e)
+    _   -> Left $ ProtocolError $ "mkError: Could not parse error" <> T.pack (show (responseResult r))
