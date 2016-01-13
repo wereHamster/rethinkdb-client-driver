@@ -62,8 +62,8 @@ recvMessage sock parser = go (runGetIncremental parser)
 
 handshakeMessage :: Maybe Text -> ByteString
 handshakeMessage mbAuth = runPut $ do
-    -- Protocol version: V0_3
-    putWord32le 0x5f75e83e
+    -- Protocol version: V0_4
+    putWord32le 0x400c2d20
 
     -- Authentication
     flip (maybe (putWord32le 0)) mbAuth $ \auth -> do
