@@ -27,6 +27,8 @@ module Database.RethinkDB
     ) where
 
 
+import           Control.Concurrent.MVar
+
 import           Data.Monoid      ((<>))
 
 import           Data.Text        (Text)
@@ -47,8 +49,21 @@ import           Database.RethinkDB.Messages
 -- Handle
 
 data Handle = Handle
-    { hSocket   :: !Socket
+    { hSocket :: !(MVar Socket)
+      -- ^ Any thread can write to the socket. In theory. But I don't think
+      -- Haskell allows atomic writes to a socket, so it is protected inside
+      -- an 'MVar'.
+      --
+      -- When too many threads write to the socket, this may cause resource
+      -- contention. Users are encouraged to use a resource pool to alleviate
+      -- that.
+
     , hTokenRef :: !(IORef Token)
+      -- ^ This is used to allocate new tokens. We use 'atomicModifyIORef' to
+      -- efficiently allocate new tokens.
+      --
+      -- RethinkDB seems to expect the token to never be zero. So we need to
+      -- start with one and then count up.
 
     , hDatabase :: !(Exp Database)
       -- ^ The database which should be used when the 'Table' expression
@@ -71,11 +86,10 @@ newHandle host port mbAuth db = do
     sendMessage sock (handshakeMessage mbAuth)
     _reply <- recvMessage sock handshakeReplyParser
 
-    -- RethinkDB seems to expect the token to never be null. So we start with
-    -- one and then count up.
-    ref <- newIORef 1
-
-    return $ Handle sock ref db
+    Handle
+        <$> newMVar sock
+        <*> newIORef 1
+        <*> pure db
 
 
 -- | The 'Database' which some expressions will use when not explicitly given
@@ -86,14 +100,13 @@ handleDatabase = hDatabase
 
 -- | Close the given handle. You MUST NOT use the handle after this.
 close :: Handle -> IO ()
-close handle = closeSocket (hSocket handle)
+close handle = withMVar (hSocket handle) closeSocket
 
 
 -- | Start a new query and wait for its (first) result. If the result is an
 -- single value ('Datum'), then three will be no further results. If it is
 -- a sequence, then you must consume results until the sequence ends.
-run :: (FromResponse (Result a))
-    => Handle -> Exp a -> IO (Res a)
+run :: (FromResponse (Result a)) => Handle -> Exp a -> IO (Res a)
 run handle expr = do
     _token <- start handle expr
     reply <- getResponse handle
@@ -139,7 +152,8 @@ collect handle s@(Partial _ x) = do
 start :: Handle -> Exp a -> IO Token
 start handle term = do
     token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
-    sendMessage (hSocket handle) (queryMessage token msg)
+    withMVar (hSocket handle) $ \socket ->
+        sendMessage socket (queryMessage token msg)
     return token
 
   where
@@ -159,31 +173,29 @@ singleElementArray x = A.Array $ V.singleton $ A.Number $ fromIntegral x
 -- | Let the server know that it can send the next response corresponding to
 -- the given token.
 continue :: Handle -> Token -> IO ()
-continue handle token = sendMessage
-    (hSocket handle)
-    (queryMessage token $ singleElementArray 2)
+continue handle token = withMVar (hSocket handle) $ \socket ->
+    sendMessage socket (queryMessage token $ singleElementArray 2)
 
 
 -- | Stop (abort?) a query.
 stop :: Handle -> Token -> IO ()
-stop handle token = sendMessage
-    (hSocket handle)
-    (queryMessage token $ singleElementArray 3)
+stop handle token = withMVar (hSocket handle) $ \socket ->
+    sendMessage socket (queryMessage token $ singleElementArray 3)
 
 
 -- | Wait until a previous query (which was started with the 'noreply' option)
 -- finishes.
 wait :: Handle -> Token -> IO ()
-wait handle token = sendMessage
-    (hSocket handle)
-    (queryMessage token $ singleElementArray 4)
+wait handle token = withMVar (hSocket handle) $ \socket ->
+    sendMessage socket (queryMessage token $ singleElementArray 4)
 
 
 
 serverInfo :: Handle -> IO (Either Error ServerInfo)
 serverInfo handle = do
     token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
-    sendMessage (hSocket handle) (queryMessage token $ singleElementArray 5)
+    withMVar (hSocket handle) $ \socket ->
+        sendMessage socket (queryMessage token $ singleElementArray 5)
     reply <- getResponse handle
     case reply of
         Left e -> return $ Left e
@@ -204,5 +216,5 @@ nextChunk handle (Partial token _) = do
 
 
 getResponse :: Handle -> IO (Either Error Response)
-getResponse handle = do
-    recvMessage (hSocket handle) responseMessageParser
+getResponse handle = withMVar (hSocket handle) $ \socket ->
+    recvMessage socket responseMessageParser
