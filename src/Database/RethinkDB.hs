@@ -34,6 +34,7 @@ import           Data.Monoid      ((<>))
 import           Data.Text        (Text)
 import qualified Data.Text        as T
 
+import           Data.Vector      (Vector)
 import qualified Data.Vector      as V
 import qualified Data.Aeson.Types as A
 
@@ -124,7 +125,7 @@ parseMessage parser value f = case A.parseEither parser value of
     Left  e -> Left $ ProtocolError $ T.pack e
     Right v -> f v
 
-mkError :: Response -> (T.Text -> Error) -> IO (Either Error a)
+mkError :: Response -> (Text -> Error) -> IO (Either Error a)
 mkError r e = return $ case V.toList (responseResult r) of
     [a] -> parseMessage A.parseJSON a (Left . e)
     _   -> Left $ ProtocolError $ "mkError: Could not parse error" <> T.pack (show (responseResult r))
@@ -133,7 +134,7 @@ mkError r e = return $ case V.toList (responseResult r) of
 
 -- | Collect all the values in a sequence and make them available as
 -- a 'Vector a'.
-collect :: (FromDatum a) => Handle -> Sequence a -> IO (Either Error (V.Vector a))
+collect :: (FromDatum a) => Handle -> Sequence a -> IO (Either Error (Vector a))
 collect _        (Done      x) = return $ Right x
 collect handle s@(Partial _ x) = do
     chunk <- nextChunk handle s
