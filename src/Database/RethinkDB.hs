@@ -81,6 +81,11 @@ data Handle = Handle
       -- RethinkDB seems to expect the token to never be zero. So we need to
       -- start with one and then count up.
 
+    , hError :: !(TVar (Maybe Error))
+      -- ^ If there was a fatal error while reading from the socket, it will
+      -- be stored here. If this is set then no further replies will be
+      -- processed. The user needs to close and re-open the handle to recover.
+
     , hResponses :: !(TVar (Map Token (Seq Response)))
       -- ^ Responses to queries. A thread reads the responses from the socket
       -- and pushes them into the queues.
@@ -110,12 +115,18 @@ newHandle host port mbAuth db = do
     sendMessage sock (handshakeMessage mbAuth)
     _reply <- recvMessage sock handshakeReplyParser
 
+    err       <- newTVarIO Nothing
     responses <- newTVarIO M.empty
 
     readerThreadId <- forkIO $ forever $ do
         res <- recvMessage sock responseMessageParser
         case res of
-            Left e -> putStrLn $ show e
+            Left e -> atomically $ do
+                mbError <- readTVar err
+                case mbError of
+                    Nothing -> writeTVar err (Just e)
+                    Just _  -> pure ()
+
             Right r -> atomically $ modifyTVar' responses $
                 M.insertWith mappend (responseToken r) (S.singleton r)
 
@@ -124,6 +135,7 @@ newHandle host port mbAuth db = do
     Handle
         <$> newMVar sock
         <*> newIORef 1
+        <*> pure err
         <*> pure responses
         <*> pure readerThreadId
         <*> pure db
@@ -263,18 +275,16 @@ responseForToken h token = atomically $ do
 
 nextResult :: (FromResponse a) => Handle -> Token -> IO (Either Error a)
 nextResult h token = do
-    response <- responseForToken h token
-    responseToRes (Right response)
-
-
-responseToRes :: (FromResponse b) => Either Error Response -> IO (Either Error b)
-responseToRes reply = case reply of
-    Left e -> return $ Left e
-    Right response -> case responseType response of
-        ClientErrorType  -> mkError response ClientError
-        CompileErrorType -> mkError response CompileError
-        RuntimeErrorType -> mkError response RuntimeError
-        _                -> return $ parseMessage parseResponse response Right
+    mbError <- atomically $ readTVar (hError h)
+    case mbError of
+        Just err -> return $ Left err
+        Nothing  -> do
+            response <- responseForToken h token
+            case responseType response of
+                ClientErrorType  -> mkError response ClientError
+                CompileErrorType -> mkError response CompileError
+                RuntimeErrorType -> mkError response RuntimeError
+                _                -> return $ parseMessage parseResponse response Right
 
 
 parseMessage :: (a -> A.Parser b) -> a -> (b -> Either Error c) -> Either Error c
