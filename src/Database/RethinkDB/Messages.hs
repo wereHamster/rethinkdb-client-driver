@@ -91,15 +91,14 @@ queryMessage token msg = runPut $ do
     buf = A.encode msg
 
 
-responseMessageParser :: Get Response
+responseMessageParser :: Get (Either (Token, String) Response)
 responseMessageParser = do
     token <- getWord64host
     len   <- getWord32le
     buf   <- getByteString (fromIntegral len)
 
     case A.eitherDecodeStrict buf of
-        Left e -> fail $ "responseMessageParser: response is not a JSON value (" ++ e ++ ")"
-        Right value -> do
-            case A.parseEither (responseParser token) value of
-                Left e  -> fail $ "responseMessageParser: could not parse response (" ++ e ++ ")"
-                Right x -> return x
+        Left e -> pure $ Left (token, "responseMessageParser: response is not a JSON value (" ++ e ++ ")")
+        Right value -> case A.parseEither (responseParser token) value of
+            Left e  -> pure $ Left (token, "responseMessageParser: could not parse response (" ++ e ++ ")")
+            Right x -> pure $ Right x

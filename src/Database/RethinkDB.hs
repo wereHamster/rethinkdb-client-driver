@@ -86,7 +86,7 @@ data Handle = Handle
       -- be stored here. If this is set then no further replies will be
       -- processed. The user needs to close and re-open the handle to recover.
 
-    , hResponses :: !(TVar (Map Token (Seq Response)))
+    , hResponses :: !(TVar (Map Token (Seq (Either Error Response))))
       -- ^ Responses to queries. A thread reads the responses from the socket
       -- and pushes them into the queues.
 
@@ -127,8 +127,11 @@ newHandle host port mbAuth db = do
                     Nothing -> writeTVar err (Just e)
                     Just _  -> pure ()
 
-            Right r -> atomically $ modifyTVar' responses $
-                M.insertWith mappend (responseToken r) (S.singleton r)
+            Right (Left (token, msg)) -> atomically $ modifyTVar' responses $
+                M.insertWith mappend token (S.singleton $ Left $ ProtocolError $ T.pack msg)
+
+            Right (Right r) -> atomically $ modifyTVar' responses $
+                M.insertWith mappend (responseToken r) (S.singleton $ Right r)
 
         return ()
 
@@ -263,7 +266,7 @@ wait handle token = withMVar (hSocket handle) $ \socket ->
 -- | This function blocks until there is a response ready for the query with
 -- the given token. It may block indefinitely if the token refers to a query
 -- which has already finished or does not exist yet!
-responseForToken :: Handle -> Token -> IO Response
+responseForToken :: Handle -> Token -> IO (Either Error Response)
 responseForToken h token = atomically $ do
     m <- readTVar (hResponses h)
     case M.lookup token m of
@@ -279,12 +282,14 @@ nextResult h token = do
     case mbError of
         Just err -> return $ Left err
         Nothing  -> do
-            response <- responseForToken h token
-            case responseType response of
-                ClientErrorType  -> mkError response ClientError
-                CompileErrorType -> mkError response CompileError
-                RuntimeErrorType -> mkError response RuntimeError
-                _                -> return $ parseMessage parseResponse response Right
+            errorOrResponse <- responseForToken h token
+            case errorOrResponse of
+                Left err -> return $ Left err
+                Right response -> case responseType response of
+                    ClientErrorType  -> mkError response ClientError
+                    CompileErrorType -> mkError response CompileError
+                    RuntimeErrorType -> mkError response RuntimeError
+                    _                -> return $ parseMessage parseResponse response Right
 
 
 parseMessage :: (a -> A.Parser b) -> a -> (b -> Either Error c) -> Either Error c
