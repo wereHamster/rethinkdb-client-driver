@@ -151,7 +151,7 @@ collect handle s@(Partial _ x) = do
 -- progress.
 start :: Handle -> Exp a -> IO Token
 start handle term = do
-    token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
+    token <- atomicModifyIORef' (hTokenRef handle) (\x -> (x + 1, x))
     withMVar (hSocket handle) $ \socket ->
         sendMessage socket (queryMessage token msg)
     return token
@@ -193,7 +193,7 @@ wait handle token = withMVar (hSocket handle) $ \socket ->
 
 serverInfo :: Handle -> IO (Either Error ServerInfo)
 serverInfo handle = do
-    token <- atomicModifyIORef (hTokenRef handle) (\x -> (x + 1, x))
+    token <- atomicModifyIORef' (hTokenRef handle) (\x -> (x + 1, x))
     withMVar (hSocket handle) $ \socket ->
         sendMessage socket (queryMessage token $ singleElementArray 5)
     reply <- getResponse handle
