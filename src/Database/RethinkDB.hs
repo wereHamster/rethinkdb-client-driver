@@ -273,7 +273,12 @@ responseForToken h token = atomically $ do
         Nothing -> retry
         Just s -> case S.viewr s of
             EmptyR -> retry
-            _ :> a -> pure a
+            rest :> a -> do
+                modifyTVar' (hResponses h) $ if S.null rest
+                    then M.delete token
+                    else M.insert token rest
+
+                pure a
 
 
 nextResult :: (FromResponse a) => Handle -> Token -> IO (Either Error a)
