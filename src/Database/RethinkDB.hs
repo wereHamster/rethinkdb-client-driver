@@ -11,7 +11,7 @@ module Database.RethinkDB
       -- * Low-level query API
     , start, continue, stop, wait, nextResult
 
-    , Error(..), Response(..), ChangeNotification(..)
+    , Token, Error(..), Response(..), ChangeNotification(..)
 
       -- * The Datum type
     , Datum(..), Array, Object, ToDatum(..), FromDatum(..)
