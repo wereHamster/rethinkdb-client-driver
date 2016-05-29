@@ -4,4 +4,4 @@ cd "$(dirname "$0")/.."
 
 
 test -f stack.yaml ||
-    ( stack install cabal-install && stack exec -- stack init --solver )
+    ( stack install cabal-install && stack exec -- stack init --resolver=nightly --solver )
