@@ -3,10 +3,8 @@ language: c
 
 matrix:
   include:
-    - env: GHCVER=7.8.4
-      addons: {apt: {packages: [ghc-7.8.4], sources: [hvr-ghc]}}
-    - env: GHCVER=7.10.3
-      addons: {apt: {packages: [ghc-7.10.3], sources: [hvr-ghc]}}
+    - env: GHCVER=8.0.1
+      addons: {apt: {packages: [ghc-8.0.1], sources: [hvr-ghc]}}
 
 install:
  - mkdir -p $HOME/.local/bin
