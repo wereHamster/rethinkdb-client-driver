@@ -101,7 +101,7 @@ import Data.List           ( (++), foldl, foldl', intercalate
                            , length, map, zip, genericLength, all, partition
                            )
 import Data.Maybe          ( Maybe(Nothing, Just), catMaybes )
-import Prelude             ( String, (-), Integer, fromIntegral, error )
+import Prelude             ( String, (-), Integer, fromIntegral, error, head )
 import Text.Printf         ( printf )
 import Text.Show           ( show )
 
@@ -355,6 +355,13 @@ encodeArgs opts multiCons (InfixC _ conName _) = do
 -- Existentially quantified constructors.
 encodeArgs opts multiCons (ForallC _ _ con) =
     encodeArgs opts multiCons con
+
+-- GADTs.
+encodeArgs opts multiCons (GadtC conNames ts _) =
+    encodeArgs opts multiCons $ NormalC (head conNames) ts
+
+encodeArgs opts multiCons (RecGadtC conNames ts _) =
+    encodeArgs opts multiCons $ RecC (head conNames) ts
 
 
 --------------------------------------------------------------------------------
@@ -688,6 +695,14 @@ parseArgs tName _ (InfixC _ conName _) (Right valName) =
 parseArgs tName opts (ForallC _ _ con) contents =
     parseArgs tName opts con contents
 
+-- GADTs. We ignore the refined return type and proceed as if it were a
+-- NormalC or RecC.
+parseArgs tName opts (GadtC conNames ts _) contents =
+    parseArgs tName opts (NormalC (head conNames) ts) contents
+
+parseArgs tName opts (RecGadtC conNames ts _) contents =
+    parseArgs tName opts (RecC (head conNames) ts) contents
+
 -- | Generates code to parse the Datum encoding of an n-ary
 -- constructor.
 parseProduct :: Name -- ^ Name of the type to which the constructor belongs.
@@ -833,8 +848,8 @@ withType name f = do
     case info of
       TyConI dec ->
         case dec of
-          DataD    _ _ tvbs cons _ -> f tvbs cons
-          NewtypeD _ _ tvbs con  _ -> f tvbs [con]
+          DataD    _ _ tvbs _ cons _ -> f tvbs cons
+          NewtypeD _ _ tvbs _ con  _ -> f tvbs [con]
           other -> error $ "Data.Aeson.TH.withType: Unsupported type: "
                           ++ show other
       _ -> error "Data.Aeson.TH.withType: I need the name of a type."
@@ -845,6 +860,8 @@ getConName (NormalC name _)  = name
 getConName (RecC name _)     = name
 getConName (InfixC _ name _) = name
 getConName (ForallC _ _ con) = getConName con
+getConName (GadtC    names _ _) = head names
+getConName (RecGadtC names _ _) = head names
 
 -- | Extracts the name from a type variable binder.
 tvbName :: TyVarBndr -> Name
