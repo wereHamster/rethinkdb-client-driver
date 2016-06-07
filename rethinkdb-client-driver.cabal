@@ -44,7 +44,7 @@ library
                       , old-locale
                       , scientific
                       , stm
-                      , template-haskell
+                      , template-haskell >= 2.11.0.0
                       , text
                       , time >= 1.4
                       , unordered-containers
