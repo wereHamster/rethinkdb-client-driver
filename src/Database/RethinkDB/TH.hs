@@ -244,6 +244,7 @@ encodeSum opts multiCons conName exp
               [|object|] `appE` listE
                 [ infixApp (conTxt opts conName) [|(.=)|] exp
                 ]
+          UntaggedValue -> exp
 
     | otherwise = exp
 
@@ -337,6 +338,7 @@ encodeArgs opts multiCons (RecC conName ts) = do
                    ObjectWithSingleField ->
                        [|object|] `appE` listE
                          [ infixApp (conTxt opts conName) [|(.=)|] exp ]
+                   UntaggedValue -> exp
             else exp
           ) []
 
@@ -462,6 +464,7 @@ consFromDatum tName opts cons = do
 
     mixedMatches =
         case sumEncoding opts of
+          UntaggedValue -> parseObject varE
           TaggedObject {tagFieldName, contentsFieldName} ->
             parseObject $ parseTaggedObject tagFieldName contentsFieldName
           ObjectWithSingleField ->
