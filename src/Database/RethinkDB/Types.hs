@@ -393,6 +393,10 @@ data Exp a where
     Coerce         :: Exp a -> Exp Text -> Exp b
     Eq             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
     Ne             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
+    Lt             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
+    Le             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
+    Gt             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
+    Ge             :: (IsDatum a, IsDatum b) => Exp a -> Exp b -> Exp Bool
     Not            :: Exp Bool -> Exp Bool
 
     Match :: Exp Text -> Exp Text -> Exp Datum
@@ -628,6 +632,18 @@ instance Term (Exp a) where
 
     toTerm (Ne a b) =
         simpleTerm 18 [SomeExp a, SomeExp b]
+
+    toTerm (Lt a b) =
+        simpleTerm 19 [SomeExp a, SomeExp b]
+
+    toTerm (Le a b) =
+        simpleTerm 20 [SomeExp a, SomeExp b]
+
+    toTerm (Gt a b) =
+        simpleTerm 21 [SomeExp a, SomeExp b]
+
+    toTerm (Ge a b) =
+        simpleTerm 22 [SomeExp a, SomeExp b]
 
     toTerm (Not e) =
         simpleTerm 23 [SomeExp e]

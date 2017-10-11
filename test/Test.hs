@@ -116,6 +116,18 @@ spec h = do
         it "Ne" $ property $ \(a :: Datum, b :: Datum) -> monadic $ do
             expectSuccess h (Ne (lift a) (lift b)) (a /= b)
 
+        it "Lt" $ property $ \(a :: Double, b :: Double) -> monadic $ do
+            expectSuccess h (Lt (lift a) (lift b)) (a < b)
+
+        it "Le" $ property $ \(a :: Double, b :: Double) -> monadic $ do
+            expectSuccess h (Le (lift a) (lift b)) (a <= b)
+
+        it "Gt" $ property $ \(a :: Double, b :: Double) -> monadic $ do
+            expectSuccess h (Gt (lift a) (lift b)) (a > b)
+
+        it "Ge" $ property $ \(a :: Double, b :: Double) -> monadic $ do
+            expectSuccess h (Ge (lift a) (lift b)) (a >= b)
+
         it "Match" $ property $ \() -> monadic $ do
             expectSuccess h (Match "foobar" "^f(.)$") Null
 
