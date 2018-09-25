@@ -896,4 +896,4 @@ valueConName (Time   _) = "Time"
 valueConName Null       = "Null"
 
 applyCon :: Name -> [Name] -> Q [Pred]
-applyCon con = mapM $ \t -> classP con [varT t]
+applyCon con = mapM $ \t -> appT (conT con) (varT t)
