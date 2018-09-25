@@ -190,7 +190,7 @@ run handle expr = do
 -- if the sequence is already 'Done',
 nextChunk :: (FromResponse (Sequence a))
           => Handle -> Sequence a -> IO (Either Error (Sequence a))
-nextChunk _      (Done          _) = return $ Left $ ProtocolError ""
+nextChunk _      (Done          _) = return $ Left $ ProtocolError "nextChunk: Done"
 nextChunk handle (Partial token _) = do
     continue handle token
     nextResult handle token
