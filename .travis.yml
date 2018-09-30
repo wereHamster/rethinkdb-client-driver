@@ -3,7 +3,12 @@ language: generic
 
 cache:
   directories:
-    - $HOME/.cabal
+    - $HOME/.cabsnap
+    - $HOME/.cabal/packages
+
+before_cache:
+  - rm -fv $HOME/.cabal/packages/hackage.haskell.org/*.log
+  - rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
 
 matrix:
   include:
