@@ -32,6 +32,6 @@ before_script:
  - sudo /etc/init.d/rethinkdb restart
 
 script:
- - cabal configure --enable-tests --enable-benchmarks
+ - cabal configure --enable-tests
  - cabal build
  - cabal test
