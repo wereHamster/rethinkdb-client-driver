@@ -5,6 +5,8 @@ matrix:
   include:
     - env: GHCVER=8.0.1
       addons: {apt: {packages: [ghc-8.0.1], sources: [hvr-ghc]}}
+    - env: GHCVER=8.6.1
+      addons: {apt: {packages: [ghc-8.6.1], sources: [hvr-ghc]}}
 
 install:
  - mkdir -p $HOME/.local/bin
