@@ -67,7 +67,7 @@ test-suite spec
     main-is           : Test.hs
     type              : exitcode-stdio-1.0
 
-    build-depends     : base < 4.12
+    build-depends     : base < 4.13
                       , hspec
                       , smallcheck
                       , hspec-smallcheck
@@ -86,7 +86,7 @@ benchmark bench
     main-is           : Benchmark.hs
     type              : exitcode-stdio-1.0
 
-    build-depends     : base < 4.12
+    build-depends     : base < 4.13
                       , criterion
 
                       , rethinkdb-client-driver
