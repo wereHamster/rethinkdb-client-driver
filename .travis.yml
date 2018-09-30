@@ -1,5 +1,9 @@
 sudo: true
-language: c
+language: generic
+
+cache:
+  directories:
+    - $HOME/.stack
 
 matrix:
   include:
