@@ -1,0 +1,38 @@
+on: [push]
+name: build
+jobs:
+  test:
+    strategy:
+      matrix:
+        ghc: ['8.0.2', '8.2.2', '8.4.4', '8.6.5', '8.8.3', '8.10.1']
+
+    runs-on: ubuntu-latest
+    name: Haskell GHC ${{ matrix.ghc }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Haskell
+        uses: actions/setup-haskell@v1
+        with:
+          ghc-version: ${{ matrix.ghc }}
+
+      - name: Cache .cabal
+        uses: actions/cache@v1
+        with:
+          path: ~/.cabal
+          key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+
+      - name: Install rethinkdb
+        run: |
+          source /etc/lsb-release && echo "deb https://download.rethinkdb.com/apt $DISTRIB_CODENAME main" | sudo tee /etc/apt/sources.list.d/rethinkdb.list
+          wget -qO- https://download.rethinkdb.com/apt/pubkey.gpg | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install rethinkdb
+
+          sudo cp /etc/rethinkdb/default.conf.sample /etc/rethinkdb/instances.d/default.conf
+          sudo /etc/init.d/rethinkdb restart
+
+      - run: cabal update
+      - run: cabal configure --enable-tests
+      - run: cabal build
+      - run: cabal test
