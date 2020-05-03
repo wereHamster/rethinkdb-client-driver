@@ -20,6 +20,8 @@ matrix:
       addons: {apt: {packages: [ghc-8.6.1,cabal-install-2.4], sources: [hvr-ghc]}}
     - env: GHCVER=8.8.1
       addons: {apt: {packages: [ghc-8.8.1,cabal-install-2.4], sources: [hvr-ghc]}}
+    - env: GHCVER=8.10.1
+      addons: {apt: {packages: [ghc-8.10.1,cabal-install-2.4], sources: [hvr-ghc]}}
 
 install:
  - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/2.4/bin:$PATH
