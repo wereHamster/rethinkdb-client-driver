@@ -2,6 +2,4 @@
 set -e
 cd "$(dirname "$0")/.."
 
-
-test -f stack.yaml ||
-    ( stack install cabal-install && stack exec -- stack init --resolver=nightly --solver )
+test -f stack.yaml || stack init --resolver=nightly
